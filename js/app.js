@@ -206,7 +206,7 @@ const App = {
         <div class="halacha-item">
           <div class="halacha-chapter">Chapter ${h.chapter}</div>
           ${h.heTitle ? `<div class="halacha-title" dir="rtl">${h.heTitle}</div>` : ''}
-          ${h.text ? `<div class="halacha-text">${_truncate(h.text, 360)}</div>` : ''}
+          ${h.heText ? `<div class="halacha-text halacha-text--he" dir="rtl">${_truncate(h.heText, 280)}</div>` : ''}
           <div class="content-actions" style="margin-top:8px">
             <button class="content-cta content-cta--primary" data-halacha-read="${i}">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>

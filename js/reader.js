@@ -1,29 +1,19 @@
 /* ── Reader Sheet ──────────────────────────────────────────
-   Full-screen slide-up overlay for reading Sefaria texts
-   directly in the app. Used for:
+   Full-screen slide-up overlay for reading Sefaria texts (Hebrew only).
+   Used for:
      - Tehilim of the day  (single multi-chapter or verse-range ref)
      - Tikoun Haklali       (10 separate psalms fetched in parallel)
      - Daily Halachot       (a single Kitzur Shulchan Aruch chapter)
 ──────────────────────────────────────────────────────────── */
 const Reader = {
   _open:    false,
-  _lang:    'he',
-  _fontPx:  null,   // overrides default text size via CSS var
-  _config:  null,   // current open()'s config
-  _content: null,   // normalized fetched content
+  _config:  null,
+  _content: null,
 
   init() {
-    this._lang = localStorage.getItem('reader_lang') || 'he';
-    this._fontPx = parseFloat(localStorage.getItem('reader_font_size_px')) || null;
-
     document.querySelectorAll('[data-reader-close]').forEach(el => {
       el.addEventListener('click', () => this.close());
     });
-
-    document.getElementById('readerLangToggle')
-      .querySelectorAll('.lang-btn').forEach(btn => {
-        btn.addEventListener('click', () => this._setLang(btn.dataset.lang));
-      });
 
     document.getElementById('readerFontDown').addEventListener('click', () => this._adjustFont(-2));
     document.getElementById('readerFontUp').addEventListener('click', () =>   this._adjustFont(+2));
@@ -34,19 +24,17 @@ const Reader = {
       if (this._open && e.key === 'Escape') this.close();
     });
 
-    this._applyLangClass();
     this._applyFontSize();
   },
 
-  /* ── Public API ── */
   /*
     config = {
-      eyebrow:    string         // e.g. "Psalms of the Day"
-      title:      string         // English title
-      heTitle:    string         // optional Hebrew title
-      refs:       string[]       // 1+ Sefaria refs to fetch sequentially as chapters
+      eyebrow:    string         e.g. "Psalms of the Day"
+      title:      string         English title
+      heTitle:    string         optional Hebrew title
+      refs:       string[]       1+ Sefaria refs to fetch sequentially as chapters
       action:     'tehilim' | 'tikounHaklali' | null
-      actionLabel: string        // CTA button label
+      actionLabel: string        CTA button label
     }
   */
   async open(config) {
@@ -57,7 +45,7 @@ const Reader = {
     document.getElementById('readerTitle').textContent   = config.title   || '';
     document.getElementById('readerHeTitle').textContent = config.heTitle || '';
 
-    const actionBtn = document.getElementById('readerAction');
+    const actionBtn   = document.getElementById('readerAction');
     const actionLabel = document.getElementById('readerActionLabel');
     if (config.action) {
       actionBtn.classList.remove('hidden');
@@ -67,13 +55,11 @@ const Reader = {
       actionBtn.classList.add('hidden');
     }
 
-    // Open the sheet
     const sheet = document.getElementById('readerSheet');
     sheet.setAttribute('aria-hidden', 'false');
     document.body.classList.add('reader-open');
     this._open = true;
 
-    // Reset scroll & show loader
     const body = document.getElementById('readerBody');
     body.scrollTop = 0;
     body.innerHTML = `
@@ -82,12 +68,11 @@ const Reader = {
         Loading text…
       </div>`;
 
-    // Fetch content
     try {
       const chapters = await this._fetchChapters(config.refs);
       this._content = chapters;
       this._renderContent();
-    } catch (err) {
+    } catch {
       body.innerHTML = `
         <div class="reader-error">
           <p>Could not load the text from Sefaria.</p>
@@ -102,134 +87,72 @@ const Reader = {
     this._open = false;
   },
 
-  /* ── Fetching ── */
+  /* ── Fetching & normalization ── */
   async _fetchChapters(refs) {
     const results = await Promise.all(refs.map(ref => Sefaria.fetchText(ref)));
     return results.map((data, i) => this._normalizeChapter(data, refs[i]));
   },
 
-  /* Normalize a Sefaria response → { ref, heTitle, enTitle, chapters: [{verses[]|paragraphs[]}] } */
+  /* Normalize a Sefaria response → { ref, heTitle, chapters: [{verses[]|paragraphs[]}] } */
   _normalizeChapter(data, ref) {
-    if (!data) return { ref, heTitle: '', enTitle: ref, chapters: [{ ref, heTitle: '', enTitle: ref, verses: [], paragraphs: [] }] };
+    if (!data) return { ref, heTitle: '', chapters: [{ ref, heTitle: '', verses: [], paragraphs: [] }] };
 
-    const heArr = data.he   || [];
-    const enArr = data.text || [];
+    const heArr = data.he || [];
     const sections   = data.sections   || [];
-    const toSections = data.toSections || [];
     const isVerseRange = sections.length >= 2;
     const isMulti = Array.isArray(heArr[0]);
-
-    // Title resolution
     const heTitle = data.heTitle || data.heRef || '';
-    const enTitle = data.title   || data.ref   || ref;
 
-    // Multi-chapter range (e.g. Psalms.1-9): nested arrays
+    /* Multi-chapter range (e.g. Psalms.1-9): nested arrays */
     if (isMulti) {
       const sub = [];
       const startCh = sections[0] || 1;
       for (let i = 0; i < heArr.length; i++) {
         const chHe = heArr[i] || [];
-        const chEn = enArr[i] || [];
         const verses = chHe.map((v, idx) => ({
           n:  idx + 1,
-          he: this._stripHtml(v),
-          en: this._stripHtml(chEn[idx] || '')
+          he: this._stripHtml(v)
         }));
         sub.push({
-          ref:      `${ref}.${startCh + i}`,
-          heTitle:  `${this._hebChapterPrefix()} ${this._toHebrewNum(startCh + i)}`,
-          enTitle:  this._chapterEnTitle(data.book || data.indexTitle || enTitle, startCh + i),
+          ref:     `${ref}.${startCh + i}`,
+          heTitle: `פרק ${this._toHebrewNum(startCh + i)}`,
           verses,
           paragraphs: []
         });
       }
-      return { ref, heTitle, enTitle, chapters: sub };
+      return { ref, heTitle, chapters: sub };
     }
 
-    // Verse range within a single chapter (e.g. Psalms.119.1-48)
+    /* Verse range within a single chapter (e.g. Psalms.119.1-48) */
     if (isVerseRange) {
       const startVerse = sections[1] || 1;
       const verses = heArr.map((v, idx) => ({
         n:  startVerse + idx,
-        he: this._stripHtml(v),
-        en: this._stripHtml(enArr[idx] || '')
+        he: this._stripHtml(v)
       }));
       return {
-        ref,
-        heTitle,
-        enTitle,
-        chapters: [{
-          ref,
-          heTitle,
-          enTitle,
-          verses,
-          paragraphs: []
-        }]
+        ref, heTitle,
+        chapters: [{ ref, heTitle, verses, paragraphs: [] }]
       };
     }
 
-    // Single chapter (e.g. Psalms.16) — array of verses
-    if (heArr.length && enArr.length) {
-      // Try to detect "verse-like" vs "long-text-like":
-      // verses are usually short (< 400 chars). Halacha paragraphs are longer.
+    /* Single chapter — detect verses vs long paragraphs by avg length */
+    if (heArr.length) {
       const avgLen = heArr.reduce((sum, s) => sum + (this._stripHtml(s || '').length), 0) / Math.max(heArr.length, 1);
       if (avgLen > 350) {
-        // Treat as paragraphs (Halacha)
-        const paragraphs = heArr.map((p, idx) => ({
-          he: this._stripHtml(p),
-          en: this._stripHtml(enArr[idx] || '')
-        }));
-        return {
-          ref,
-          heTitle,
-          enTitle,
-          chapters: [{
-            ref,
-            heTitle,
-            enTitle,
-            verses: [],
-            paragraphs
-          }]
-        };
+        const paragraphs = heArr.map(p => ({ he: this._stripHtml(p) }));
+        return { ref, heTitle, chapters: [{ ref, heTitle, verses: [], paragraphs }] };
       }
-      const verses = heArr.map((v, idx) => ({
-        n:  idx + 1,
-        he: this._stripHtml(v),
-        en: this._stripHtml(enArr[idx] || '')
-      }));
-      return {
-        ref,
-        heTitle,
-        enTitle,
-        chapters: [{
-          ref,
-          heTitle,
-          enTitle,
-          verses,
-          paragraphs: []
-        }]
-      };
+      const verses = heArr.map((v, idx) => ({ n: idx + 1, he: this._stripHtml(v) }));
+      return { ref, heTitle, chapters: [{ ref, heTitle, verses, paragraphs: [] }] };
     }
 
-    // Fallback: paragraphs from English
-    const paragraphs = (enArr.length ? enArr : heArr).map((p, idx) => ({
-      he: this._stripHtml(heArr[idx] || ''),
-      en: this._stripHtml(enArr[idx] || '')
-    }));
-    return {
-      ref, heTitle, enTitle,
-      chapters: [{ ref, heTitle, enTitle, verses: [], paragraphs }]
-    };
+    return { ref, heTitle, chapters: [{ ref, heTitle, verses: [], paragraphs: [] }] };
   },
 
   _stripHtml(s) {
     if (!s) return '';
     return String(s).replace(/<sup[^>]*>.*?<\/sup>/g, '').replace(/<[^>]+>/g, '').trim();
-  },
-
-  _hebChapterPrefix() { return 'פרק'; },
-  _chapterEnTitle(book, num) {
-    return `${book || 'Chapter'} ${num}`;
   },
 
   /* Convert 1–150 to Hebrew gematria letters (alef, bet, ..., קנ) */
@@ -258,16 +181,14 @@ const Reader = {
       body.innerHTML = '<div class="reader-error"><p>No text was returned.</p></div>';
       return;
     }
-
     const flat = this._content.flatMap(c => c.chapters || []);
     body.innerHTML = `<div class="reader-inner">${flat.map(ch => this._renderChapter(ch)).join('')}</div>`;
   },
 
   _renderChapter(ch) {
-    const head = (ch.heTitle || ch.enTitle) ? `
+    const head = ch.heTitle ? `
       <div class="reader-chapter-head">
-        ${ch.heTitle ? `<div class="reader-chapter-he" dir="rtl">${ch.heTitle}</div>` : ''}
-        ${ch.enTitle ? `<div class="reader-chapter-en">${ch.enTitle}</div>` : ''}
+        <div class="reader-chapter-he" dir="rtl">${ch.heTitle}</div>
       </div>` : '';
 
     if (ch.verses && ch.verses.length) {
@@ -288,62 +209,24 @@ const Reader = {
   },
 
   _renderVerse(v) {
-    // Single-language modes use a unified .reader-verse-text;
-    // 'both' mode splits into he + en blocks.
-    if (this._lang === 'both') {
-      return `
-        <div class="reader-verse">
-          <span class="reader-verse-num">${v.n}</span>
-          <div class="reader-verse-he" dir="rtl">${v.he || '—'}</div>
-          ${v.en ? `<div class="reader-verse-en">${v.en}</div>` : ''}
-        </div>`;
-    }
-    const text = this._lang === 'he' ? v.he : v.en;
     return `
       <div class="reader-verse">
         <span class="reader-verse-num">${v.n}</span>
-        <div class="reader-verse-text">${text || '—'}</div>
+        <div class="reader-verse-text" dir="rtl">${v.he || '—'}</div>
       </div>`;
   },
 
   _renderParagraph(p) {
-    if (this._lang === 'both') {
-      return `
-        <div class="reader-paragraph">
-          <div class="reader-paragraph-he" dir="rtl">${p.he || '—'}</div>
-          ${p.en ? `<div class="reader-paragraph-en">${p.en}</div>` : ''}
-        </div>`;
-    }
-    const text = this._lang === 'he' ? p.he : p.en;
-    return `<div class="reader-paragraph">${text || '—'}</div>`;
-  },
-
-  /* ── Language toggle ── */
-  _setLang(lang) {
-    this._lang = lang;
-    localStorage.setItem('reader_lang', lang);
-    document.querySelectorAll('#readerLangToggle .lang-btn').forEach(b => {
-      b.classList.toggle('active', b.dataset.lang === lang);
-    });
-    this._applyLangClass();
-    if (this._content) this._renderContent();
-  },
-
-  _applyLangClass() {
-    const body = document.getElementById('readerBody');
-    body.classList.remove('lang-he', 'lang-en', 'lang-both');
-    body.classList.add(`lang-${this._lang}`);
+    return `<div class="reader-paragraph" dir="rtl">${p.he || '—'}</div>`;
   },
 
   /* ── Font size ── */
   _adjustFont(delta) {
-    // Adjusts a CSS var on the body that scales reader text
     const root = document.getElementById('readerBody');
     const cur = parseFloat(getComputedStyle(root).getPropertyValue('--reader-scale')) || 1.0;
     const next = Math.max(0.7, Math.min(1.7, cur + (delta / 20)));
     root.style.setProperty('--reader-scale', next);
     localStorage.setItem('reader_font_scale', next);
-    this._applyFontSize();
   },
 
   _applyFontSize() {
@@ -372,7 +255,6 @@ const Reader = {
     btn.classList.add('flash');
     label.textContent = '✓ Done';
 
-    // If today's data, refresh Today tab in background (if it's the active tab when reader closes)
     setTimeout(() => {
       this.close();
       btn.classList.remove('flash');
