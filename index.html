@@ -35,7 +35,6 @@
       <button class="tab" data-tab="week">Week</button>
       <button class="tab" data-tab="month">Month</button>
       <button class="tab" data-tab="content">Daily Content</button>
-      <button class="tab" data-tab="siddur">Siddur</button>
     </div>
   </nav>
 
@@ -171,45 +170,6 @@
       </div>
     </section>
 
-    <!-- ════════════════════════════════════════════════════
-         SIDDUR TAB
-    ════════════════════════════════════════════════════ -->
-    <section class="panel" data-tab="siddur">
-
-      <div class="siddur-toolbar">
-        <div class="pill-group" id="nusachSelector" aria-label="Nusach">
-          <button class="pill-btn" data-nusach="ashkenaz">Ashkenaz</button>
-          <button class="pill-btn" data-nusach="sefard">Sefard</button>
-          <button class="pill-btn" data-nusach="sephardic">Sephardic</button>
-          <button class="pill-btn" data-nusach="ari">Nusach Ha'Ari</button>
-        </div>
-
-        <div class="pill-group pill-group--prayer" id="prayerSelector" aria-label="Prayer">
-          <button class="pill-btn active" data-prayer="shaharit"><span dir="rtl">שַׁחֲרִית</span> Shaharit</button>
-          <button class="pill-btn" data-prayer="mincha"><span dir="rtl">מִנְחָה</span> Mincha</button>
-          <button class="pill-btn" data-prayer="arvit"><span dir="rtl">עַרְבִית</span> Arvit</button>
-        </div>
-
-        <div class="pill-group pill-group--section" id="siddurSections" aria-label="Section"></div>
-      </div>
-
-      <div class="siddur-reader">
-        <div class="siddur-controls">
-          <div class="font-controls">
-            <button class="font-btn" id="fontDecrease" aria-label="Decrease text size">A−</button>
-            <button class="font-btn" id="fontIncrease" aria-label="Increase text size">A+</button>
-          </div>
-        </div>
-        <div class="siddur-text" id="siddurText">Select a prayer section to begin reading.</div>
-      </div>
-
-      <button class="floating-action" id="markPrayerDone">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-        Mark as Done
-      </button>
-
-    </section>
-
   </main>
 
   <!-- Scripts (dependency order) -->
@@ -219,8 +179,6 @@
   <script src="js/sefaria.js"></script>
   <script src="js/tracker.js"></script>
   <script src="js/charts.js"></script>
-  <script src="js/siddur-refs.js"></script>
-  <script src="js/siddur.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

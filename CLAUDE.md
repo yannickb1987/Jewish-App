@@ -25,13 +25,13 @@ When changes need verification in a browser, refresh the page — there is no ho
 - **Chart.js 4.4.0** — loaded from jsDelivr in `index.html` for the Week line chart
 - **Google Fonts** — Inter (UI), Fraunces (display serif), Frank Ruhl Libre (Hebrew); loaded in `<head>`
 - **HebCal REST API** (`hebcal.com`) — Hebrew date conversion + weekly Parasha (no auth)
-- **Sefaria REST API** (`sefaria.org/api`) — Kitzur Shulchan Aruch (daily Halachot) + Siddur prayer texts (no auth)
+- **Sefaria REST API** (`sefaria.org/api`) — Kitzur Shulchan Aruch for daily Halachot (no auth)
 
 All API calls happen client-side. CORS is supported by both providers.
 
 ## Architecture
 
-The app is a tabbed SPA loaded as a single HTML file with 9 vanilla JS modules wired together via globals. Each module exposes a single object (`App`, `Tracker`, `Charts`, `Siddur`, `Storage`, etc.); scripts are loaded in dependency order in `index.html`.
+The app is a tabbed SPA loaded as a single HTML file with 7 vanilla JS modules wired together via globals. Each module exposes a single object (`App`, `Tracker`, `Charts`, `Storage`, etc.); scripts are loaded in dependency order in `index.html`. Four tabs: Today, Week, Month, Daily Content.
 
 ### Module map
 
@@ -40,12 +40,10 @@ The app is a tabbed SPA loaded as a single HTML file with 9 vanilla JS modules w
 | `js/app.js` | Entry point. Tab routing, date navigation, hero header (Hebrew date + parasha + score + intention), theme toggle, Daily Content tab rendering. |
 | `js/tracker.js` | "Today" tab. Renders the row-based form (status dot · Hebrew · English · summary · chevron), expandable detail panels, 5-dot intensity widgets, auto-save on every change. |
 | `js/charts.js` | "Week" + "Month" tabs. 4 summary tiles, Chart.js line chart, contribution grid (10 practices × 7 days), monthly KPI cards, practice grid (10 × N days). Theme-aware colors. |
-| `js/siddur.js` | "Siddur" tab. Pill-based selector (nusach × prayer × section), centered Hebrew reader, font size controls, floating "Mark as Done" pill, sessionStorage caching of fetched siddur text. |
-| `js/storage.js` | localStorage CRUD. Single source of truth for the data model. Keys: `tracker_YYYY-MM-DD` (daily data), `tracker_settings` (nusach, currency, fontSize), `tracker_known_traits`, `tracker_theme`. |
+| `js/storage.js` | localStorage CRUD. Single source of truth for the data model. Keys: `tracker_YYYY-MM-DD` (daily data), `tracker_settings` (currency), `tracker_known_traits`, `tracker_theme`. |
 | `js/hebrew-cal.js` | HebCal API client (Hebrew date + parasha) + Gregorian date formatter. |
 | `js/sefaria.js` | Sefaria API client for daily Halachot. Picks 2 Kitzur Shulchan Aruch chapters per day cycling through day-of-year. |
 | `js/tehilim.js` | Static 30-day Tehilim schedule keyed by Hebrew day-of-month + Tikoun Haklali psalm list. |
-| `js/siddur-refs.js` | Static map of `{nusach, prayer, sectionKey}` → Sefaria text ref. Four nusachim: ashkenaz, sefard, sephardic, ari. |
 
 ### Data Model (localStorage)
 
@@ -79,9 +77,7 @@ When adding theme-aware behavior, use CSS variables exclusively — do not hardc
 
 ### Tab Routing
 
-`App._showTab(name)` updates `body[data-active-tab="..."]` and toggles `.panel.active`. Each tab's render function (`Tracker.render`, `Charts.renderWeek`, `Charts.renderMonth`, `App._renderDailyContent`, `Siddur.render`) is called on tab entry. There is no virtual DOM — re-renders rebuild `innerHTML` for the relevant container and re-bind events.
-
-The floating "Mark as Done" pill on the Siddur tab is shown/hidden purely via the `body[data-active-tab="siddur"]` selector — do not toggle its display in JS.
+`App._showTab(name)` updates `body[data-active-tab="..."]` and toggles `.panel.active`. Each tab's render function (`Tracker.render`, `Charts.renderWeek`, `Charts.renderMonth`, `App._renderDailyContent`) is called on tab entry. There is no virtual DOM — re-renders rebuild `innerHTML` for the relevant container and re-bind events.
 
 ### Row Interaction Pattern (Today tab)
 

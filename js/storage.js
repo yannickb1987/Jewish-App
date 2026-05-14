@@ -37,10 +37,10 @@ const Storage = {
   getSettings() {
     try {
       const raw = localStorage.getItem('tracker_settings');
-      const defaults = { nusach: 'ashkenaz', currency: '$', fontSize: 1.25 };
+      const defaults = { currency: '$' };
       if (!raw) return defaults;
       return Object.assign(defaults, JSON.parse(raw));
-    } catch { return { nusach: 'ashkenaz', currency: '$', fontSize: 1.25 }; }
+    } catch { return { currency: '$' }; }
   },
 
   saveSettings(settings) {

@@ -84,7 +84,6 @@ const App = {
       case 'week':    Charts.renderWeek(this.currentDate);  break;
       case 'month':   Charts.renderMonth(this.currentDate); break;
       case 'content': this._renderDailyContent();           break;
-      case 'siddur':  Siddur.render();                      break;
     }
   },
 
