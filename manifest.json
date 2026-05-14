@@ -1,0 +1,27 @@
+{
+  "name": "Avodat Hashem",
+  "short_name": "Avodat",
+  "description": "A daily tracker for Jewish religious practices",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FAF7F0",
+  "theme_color": "#FAF7F0",
+  "lang": "en",
+  "categories": ["lifestyle", "education", "productivity"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

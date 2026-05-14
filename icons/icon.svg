@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FAF7F0"/>
+      <stop offset="100%" stop-color="#F0E8D4"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#D4A574"/>
+      <stop offset="100%" stop-color="#7C2D3A"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <text x="256" y="370" font-family="'Frank Ruhl Libre', 'David', serif"
+        font-size="380" font-weight="700"
+        text-anchor="middle" fill="url(#gold)">א</text>
+</svg>

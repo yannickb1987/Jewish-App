@@ -1,10 +1,12 @@
 /* ── App Controller ─────────────────────────────────────────
-   Hero rendering, intention line, theme toggle, tab routing.
+   Tab routing (top + bottom), greeting, time-aware intentions,
+   theme toggle, auth state, install prompt.
 ──────────────────────────────────────────────────────────── */
 const App = {
   currentDate: _todayStr(),
   activeTab:   'today',
   _hebrewDay:  null,
+  _installEvent: null,
 
   async init() {
     this._initTheme();
@@ -12,13 +14,171 @@ const App = {
     this._bindDateNav();
     this._bindThemeToggle();
     this._bindReaderTriggers();
+    this._bindProfileChip();
+    this._bindAuthRows();
+    this._bindInstallPrompt();
     Reader.init();
+
+    /* Auth — sets up Firestore sync triggers */
+    if (typeof Auth !== 'undefined') {
+      Auth.init();
+      Auth.onChange((user) => this._onAuthChange(user));
+    }
+
+    /* Onboarding (after Auth is wired so sign-in step works) */
+    if (typeof Onboarding !== 'undefined') Onboarding.init();
+
     document.body.setAttribute('data-active-tab', 'today');
     await this._updateHero();
     this._showTab('today');
+    this._refreshProfileViews();
   },
 
-  /* ── Reader triggers (Tehilim, Tikoun, Halacha) ── */
+  /* ── Theme ── */
+  _initTheme() {
+    const saved = localStorage.getItem('tracker_theme');
+    if (saved) document.documentElement.setAttribute('data-theme', saved);
+  },
+  _bindThemeToggle() {
+    document.getElementById('themeToggle').addEventListener('click', () => {
+      const cur = document.documentElement.getAttribute('data-theme');
+      const sysDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const next = !cur ? (sysDark ? 'light' : 'dark') : (cur === 'dark' ? 'light' : 'dark');
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('tracker_theme', next);
+      if (this.activeTab === 'week')  Charts.renderWeek(this.currentDate);
+      if (this.activeTab === 'month') Charts.renderMonth(this.currentDate);
+    });
+  },
+
+  /* ── Date Navigation ── */
+  _bindDateNav() {
+    document.getElementById('prevDay').addEventListener('click', () => {
+      this.currentDate = _offsetDate(this.currentDate, -1);
+      this._onDateChange();
+    });
+    document.getElementById('nextDay').addEventListener('click', () => {
+      const next = _offsetDate(this.currentDate, 1);
+      if (next <= _todayStr()) { this.currentDate = next; this._onDateChange(); }
+    });
+    document.getElementById('goToday').addEventListener('click', () => {
+      this.currentDate = _todayStr();
+      this._onDateChange();
+    });
+  },
+  async _onDateChange() {
+    await this._updateHero();
+    const tab = this.activeTab;
+    if (tab === 'today')   Tracker.render(this.currentDate);
+    if (tab === 'week')    Charts.renderWeek(this.currentDate);
+    if (tab === 'content') this._renderDailyContent();
+  },
+
+  /* ── Tabs (top + bottom) ── */
+  _bindTabNav() {
+    document.querySelectorAll('.tab, .tab-bar-btn').forEach(btn => {
+      btn.addEventListener('click', () => this._showTab(btn.dataset.tab));
+    });
+  },
+  _showTab(tabName) {
+    this.activeTab = tabName;
+    document.body.setAttribute('data-active-tab', tabName);
+
+    document.querySelectorAll('.panel').forEach(p =>
+      p.classList.toggle('active', p.dataset.tab === tabName)
+    );
+    document.querySelectorAll('.tab, .tab-bar-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.tab === tabName)
+    );
+
+    switch (tabName) {
+      case 'today':   Tracker.render(this.currentDate);     break;
+      case 'week':    Charts.renderWeek(this.currentDate);  break;
+      case 'month':   Charts.renderMonth(this.currentDate); break;
+      case 'content': this._renderDailyContent();           break;
+      case 'profile': this._refreshProfileViews();          break;
+    }
+  },
+
+  /* ── Hero greeting + dates ── */
+  async _updateHero() {
+    this._updateGreeting();
+    document.getElementById('gregDateDisplay').textContent =
+      HebrewCal.formatGregorianDate(this.currentDate);
+
+    document.getElementById('hebrewDateDisplay').textContent = '…';
+    document.getElementById('parashaDisplay').textContent = '';
+
+    const { hebrewDate, parasha } = await HebrewCal.init(this.currentDate);
+    const heEl = document.getElementById('hebrewDateDisplay');
+    if (hebrewDate?.hebrew) {
+      heEl.textContent = hebrewDate.hebrew;
+      this._hebrewDay = hebrewDate.hd;
+    } else {
+      heEl.textContent = '—';
+    }
+
+    const pEl = document.getElementById('parashaDisplay');
+    if (parasha) {
+      pEl.textContent = parasha.startsWith('פרשת') ? parasha : `פרשת ${parasha}`;
+    } else {
+      pEl.textContent = '';
+    }
+
+    document.getElementById('heroIntention').textContent = this._getIntention();
+  },
+
+  _updateGreeting() {
+    const el = document.getElementById('heroGreeting');
+    if (!el) return;
+    const profile = Storage.getProfile();
+    const name = (profile.name || '').trim();
+    if (!name) { el.textContent = ''; return; }
+    const h = new Date().getHours();
+    const period =
+      h < 12 ? 'Good morning' :
+      h < 18 ? 'Good afternoon' :
+      h < 22 ? 'Good evening' :
+               'Shalom';
+    el.textContent = `${period}, ${name}`;
+  },
+
+  /* ── Time-aware intentions ── */
+  _getIntention() {
+    const [y, m, d] = this.currentDate.split('-').map(Number);
+    const dt  = new Date(y, m - 1, d);
+    const dow = dt.getDay();
+    const isToday = this.currentDate === _todayStr();
+    const hr  = isToday ? new Date().getHours() : 9;
+    const period = hr < 12 ? 'morning' : hr < 18 ? 'afternoon' : 'evening';
+
+    const lib = {
+      0: { morning: 'Begin the week with renewed purpose.',
+           afternoon: 'Find the holy in the ordinary.',
+           evening: 'Let gratitude carry you into rest.' },
+      1: { morning: 'Every act of service builds the world.',
+           afternoon: 'Strength comes from small, faithful acts.',
+           evening: 'Tomorrow is a new chance.' },
+      2: { morning: 'Speak words that elevate today.',
+           afternoon: 'Patience is its own prayer.',
+           evening: 'Reflect quietly on what is true.' },
+      3: { morning: 'Find the holy in the ordinary.',
+           afternoon: 'Mercy is the soul of justice.',
+           evening: 'The midweek is a turning of the wheel.' },
+      4: { morning: 'Open your heart to gratitude.',
+           afternoon: 'Generosity multiplies what is given.',
+           evening: 'Make space for tomorrow\'s preparations.' },
+      5: { morning: 'Prepare your soul for Shabbat.',
+           afternoon: 'The day prepares for the holiness of Shabbat.',
+           evening: 'Welcome the queen of days.' },
+      6: { morning: 'Rest in the light of the day.',
+           afternoon: 'Shabbat shalom — taste the eternal.',
+           evening: 'Carry Shabbat\'s light into the week.' }
+    };
+    return lib[dow][period];
+  },
+
+  /* ── Reader triggers ── */
   _bindReaderTriggers() {
     document.getElementById('tehilimRead').addEventListener('click', () => this._openTehilimReader());
     document.getElementById('tikounRead').addEventListener('click',   () => this._openTikounReader());
@@ -59,122 +219,6 @@ const App = {
     });
   },
 
-  /* ── Theme ── */
-  _initTheme() {
-    const saved = localStorage.getItem('tracker_theme');
-    if (saved) document.documentElement.setAttribute('data-theme', saved);
-  },
-  _bindThemeToggle() {
-    document.getElementById('themeToggle').addEventListener('click', () => {
-      const cur = document.documentElement.getAttribute('data-theme');
-      const sysDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-      let next;
-      if (!cur) next = sysDark ? 'light' : 'dark';
-      else      next = cur === 'dark' ? 'light' : 'dark';
-      document.documentElement.setAttribute('data-theme', next);
-      localStorage.setItem('tracker_theme', next);
-      // Re-render charts if visible (color-dependent)
-      if (this.activeTab === 'week')  Charts.renderWeek(this.currentDate);
-      if (this.activeTab === 'month') Charts.renderMonth(this.currentDate);
-    });
-  },
-
-  /* ── Date Navigation ── */
-  _bindDateNav() {
-    document.getElementById('prevDay').addEventListener('click', () => {
-      this.currentDate = _offsetDate(this.currentDate, -1);
-      this._onDateChange();
-    });
-    document.getElementById('nextDay').addEventListener('click', () => {
-      const next = _offsetDate(this.currentDate, 1);
-      if (next <= _todayStr()) {
-        this.currentDate = next;
-        this._onDateChange();
-      }
-    });
-    document.getElementById('goToday').addEventListener('click', () => {
-      this.currentDate = _todayStr();
-      this._onDateChange();
-    });
-  },
-  async _onDateChange() {
-    await this._updateHero();
-    const tab = this.activeTab;
-    if (tab === 'today')   Tracker.render(this.currentDate);
-    if (tab === 'week')    Charts.renderWeek(this.currentDate);
-    if (tab === 'content') this._renderDailyContent();
-  },
-
-  /* ── Tabs ── */
-  _bindTabNav() {
-    document.querySelectorAll('.tab').forEach(btn => {
-      btn.addEventListener('click', () => this._showTab(btn.dataset.tab));
-    });
-  },
-  _showTab(tabName) {
-    this.activeTab = tabName;
-    document.body.setAttribute('data-active-tab', tabName);
-
-    document.querySelectorAll('.panel').forEach(p =>
-      p.classList.toggle('active', p.dataset.tab === tabName)
-    );
-    document.querySelectorAll('.tab').forEach(b =>
-      b.classList.toggle('active', b.dataset.tab === tabName)
-    );
-
-    switch (tabName) {
-      case 'today':   Tracker.render(this.currentDate);     break;
-      case 'week':    Charts.renderWeek(this.currentDate);  break;
-      case 'month':   Charts.renderMonth(this.currentDate); break;
-      case 'content': this._renderDailyContent();           break;
-    }
-  },
-
-  /* ── Hero ── */
-  async _updateHero() {
-    document.getElementById('gregDateDisplay').textContent =
-      HebrewCal.formatGregorianDate(this.currentDate);
-
-    document.getElementById('hebrewDateDisplay').textContent = '…';
-    document.getElementById('parashaDisplay').textContent = '';
-
-    const { hebrewDate, parasha } = await HebrewCal.init(this.currentDate);
-
-    const heEl = document.getElementById('hebrewDateDisplay');
-    if (hebrewDate?.hebrew) {
-      heEl.textContent = hebrewDate.hebrew;
-      this._hebrewDay = hebrewDate.hd;
-    } else {
-      heEl.textContent = '—';
-    }
-
-    const pEl = document.getElementById('parashaDisplay');
-    if (parasha) {
-      const txt = parasha.startsWith('פרשת') ? parasha : `פרשת ${parasha}`;
-      pEl.textContent = txt;
-    } else {
-      pEl.textContent = '';
-    }
-
-    document.getElementById('heroIntention').textContent = this._getIntention();
-  },
-
-  /* ── Intention rotation ── */
-  _getIntention() {
-    const [y, m, d] = this.currentDate.split('-').map(Number);
-    const dow = new Date(y, m - 1, d).getDay();
-    const intentions = [
-      'Begin the week with renewed purpose.',           // Sunday
-      'Every act of service builds the world.',          // Monday
-      'Speak words that elevate today.',                 // Tuesday
-      'Find the holy in the ordinary.',                  // Wednesday
-      'Open your heart to gratitude.',                   // Thursday
-      'Prepare your soul for Shabbat.',                  // Friday
-      'Rest in the light of the day.'                    // Saturday
-    ];
-    return intentions[dow];
-  },
-
   /* ── Daily Content ── */
   _renderDailyContent() {
     this._renderTehilim();
@@ -185,7 +229,6 @@ const App = {
     const hd    = this._hebrewDay || 1;
     const entry = Tehilim.getForHebrewDay(hd);
     const url   = `https://www.sefaria.org/${entry.ref}?lang=he`;
-
     document.getElementById('tehilimDay').textContent   = `Day ${hd}`;
     document.getElementById('tehilimRange').textContent = `Psalms ${entry.psalms}`;
     document.getElementById('tehilimHe').textContent    = entry.label;
@@ -194,8 +237,12 @@ const App = {
 
   async _renderHalachot() {
     const body = document.getElementById('halachotBody');
-    body.innerHTML = '<div class="loading"><span class="spinner"></span> Loading halachot…</div>';
-
+    body.innerHTML = `<div class="skeleton-stack">
+      <div class="skeleton skeleton--title"></div>
+      <div class="skeleton skeleton--line"></div>
+      <div class="skeleton skeleton--line"></div>
+      <div class="skeleton skeleton--line short"></div>
+    </div>`;
     try {
       const halachot = await Sefaria.fetchDailyHalachot(this.currentDate);
       if (!halachot || !halachot.length) {
@@ -225,6 +272,110 @@ const App = {
     } catch {
       body.innerHTML = '<div class="empty-state">Error loading halachot.</div>';
     }
+  },
+
+  /* ── Profile chip + view ── */
+  _bindProfileChip() {
+    const chip = document.getElementById('profileChip');
+    if (chip) chip.addEventListener('click', () => this._showTab('profile'));
+  },
+  _bindAuthRows() {
+    const row = document.getElementById('signInRow');
+    if (row) row.addEventListener('click', async () => {
+      if (Auth.user) {
+        // Sign out
+        if (confirm('Sign out? Your data stays on this device.')) {
+          await Auth.signOut();
+        }
+      } else {
+        if (!Auth.isEnabled()) {
+          alert('Sign-in requires Firebase setup. See README.');
+          return;
+        }
+        try { await Auth.signInWithGoogle(); }
+        catch { alert('Sign-in failed. Please try again.'); }
+      }
+    });
+  },
+
+  _refreshProfileViews() {
+    const user    = Auth?.user;
+    const profile = Storage.getProfile();
+    const name    = (profile.name || (user?.displayName) || '').trim();
+
+    /* Top avatar */
+    const topAvatar = document.getElementById('topAvatar');
+    if (topAvatar) {
+      if (user?.photoURL) {
+        topAvatar.style.backgroundImage = `url(${user.photoURL})`;
+        topAvatar.textContent = '';
+      } else {
+        topAvatar.style.backgroundImage = '';
+        topAvatar.textContent = name ? name[0] : '·';
+      }
+    }
+
+    /* Profile tab */
+    const profileAvatar = document.getElementById('profileAvatar');
+    if (profileAvatar) {
+      if (user?.photoURL) {
+        profileAvatar.style.backgroundImage = `url(${user.photoURL})`;
+        profileAvatar.textContent = '';
+      } else {
+        profileAvatar.style.backgroundImage = '';
+        profileAvatar.textContent = name ? name[0] : '·';
+      }
+    }
+    const nameEl  = document.getElementById('profileName');
+    const emailEl = document.getElementById('profileEmail');
+    if (nameEl)  nameEl.textContent  = name || 'Add your name';
+    if (emailEl) emailEl.textContent = user?.email || 'Not signed in';
+
+    const signInLabel = document.getElementById('signInLabel');
+    if (signInLabel) signInLabel.textContent = user ? 'Sign out' : 'Sign in with Google';
+
+    const fbHint = document.getElementById('firebaseHint');
+    if (fbHint) fbHint.style.display = Auth?.isEnabled() ? 'none' : 'block';
+
+    const nameInput = document.getElementById('profileNameInput');
+    if (nameInput) nameInput.value = profile.name || '';
+  },
+
+  _onAuthChange(user) {
+    this._refreshProfileViews();
+  },
+
+  _onSyncComplete() {
+    /* Called after remote profile/days merged into local */
+    if (this.activeTab === 'today') Tracker.render(this.currentDate);
+    if (this.activeTab === 'week')  Charts.renderWeek(this.currentDate);
+    if (this.activeTab === 'month') Charts.renderMonth(this.currentDate);
+    this._refreshProfileViews();
+    this._updateGreeting();
+  },
+
+  _refreshAfterOnboarding() {
+    this._refreshProfileViews();
+    this._updateGreeting();
+    if (this.activeTab === 'today') Tracker.render(this.currentDate);
+  },
+
+  /* ── PWA install prompt (Android / Edge) ── */
+  _bindInstallPrompt() {
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      this._installEvent = e;
+      const row = document.getElementById('installRow');
+      if (row) row.style.display = '';
+    });
+    const row = document.getElementById('installRow');
+    if (row) row.addEventListener('click', async () => {
+      if (!this._installEvent) return;
+      this._installEvent.prompt();
+      const choice = await this._installEvent.userChoice;
+      if (choice.outcome === 'accepted') row.style.display = 'none';
+      this._installEvent = null;
+    });
   }
 };
 
@@ -241,7 +392,6 @@ function _offsetDate(dateStr, days) {
 }
 function _truncate(s, n) { return s.length > n ? s.substring(0, n) + '…' : s; }
 
-/* Expose helpers globally */
 window._todayStr   = _todayStr;
 window._offsetDate = _offsetDate;
 

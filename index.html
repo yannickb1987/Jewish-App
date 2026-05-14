@@ -2,8 +2,18 @@
 <html lang="en" dir="ltr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
   <title>Avodat Hashem</title>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#FAF7F0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0C0A09" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Avodat">
+  <link rel="apple-touch-icon" href="/icons/icon.svg">
+  <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
 
   <!-- Premium typography -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -12,14 +22,22 @@
 
   <link rel="stylesheet" href="css/style.css">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <!-- Firebase compat SDK (auth + firestore) -->
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 </head>
 <body>
 
-  <!-- ── Top Bar ────────────────────────────────────────────── -->
+  <!-- ── Topbar (desktop primary, mobile minimal) ──────────── -->
   <header class="topbar">
     <div class="topbar-inner">
       <div class="wordmark">AVODAT HASHEM</div>
       <div class="topbar-right">
+        <div class="profile-chip" id="profileChip" role="button" tabindex="0">
+          <div class="avatar" id="topAvatar">·</div>
+        </div>
         <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
           <svg class="icon-sun" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
           <svg class="icon-moon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -28,13 +46,14 @@
     </div>
   </header>
 
-  <!-- ── Tab Navigation ───────────────────────────────────── -->
-  <nav class="tabs">
+  <!-- ── Tab Navigation (desktop, top) ────────────────────── -->
+  <nav class="tabs tabs--top">
     <div class="tabs-inner">
       <button class="tab active" data-tab="today">Today</button>
       <button class="tab" data-tab="week">Week</button>
       <button class="tab" data-tab="month">Month</button>
       <button class="tab" data-tab="content">Daily Content</button>
+      <button class="tab" data-tab="profile">Profile</button>
     </div>
   </nav>
 
@@ -46,7 +65,6 @@
     ════════════════════════════════════════════════════ -->
     <section class="panel active" data-tab="today">
 
-      <!-- Date navigation strip -->
       <div class="date-strip">
         <button class="date-nav" id="prevDay" aria-label="Previous day">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
@@ -57,8 +75,8 @@
         </button>
       </div>
 
-      <!-- Hero Card -->
       <article class="hero">
+        <div class="hero-greeting" id="heroGreeting"></div>
         <div class="hero-dates">
           <div class="hero-greg" id="gregDateDisplay">—</div>
           <div class="hero-he" id="hebrewDateDisplay" dir="rtl">…</div>
@@ -80,7 +98,6 @@
         <p class="hero-intention" id="heroIntention">May your service be accepted today.</p>
       </article>
 
-      <!-- Prayers Section -->
       <section class="section">
         <header class="section-head">
           <h2 class="section-title">Prayers</h2>
@@ -89,7 +106,6 @@
         <div class="rows" id="prayerRows"></div>
       </section>
 
-      <!-- Daily Practices Section -->
       <section class="section">
         <header class="section-head">
           <h2 class="section-title">Daily Practices</h2>
@@ -97,6 +113,11 @@
         </header>
         <div class="rows" id="practiceRows"></div>
       </section>
+
+      <details class="other-practices" id="otherPractices">
+        <summary>Other practices</summary>
+        <div class="rows" id="otherRows"></div>
+      </details>
 
     </section>
 
@@ -176,13 +197,103 @@
 
         <article class="content-card">
           <div class="content-eyebrow">Daily Halacha · Kitzur Shulchan Aruch</div>
-          <div id="halachotBody"><div class="loading">Loading…</div></div>
+          <div id="halachotBody"><div class="skeleton-stack">
+            <div class="skeleton skeleton--title"></div>
+            <div class="skeleton skeleton--line"></div>
+            <div class="skeleton skeleton--line"></div>
+            <div class="skeleton skeleton--line short"></div>
+          </div></div>
         </article>
 
       </div>
     </section>
 
+    <!-- ════════════════════════════════════════════════════
+         PROFILE TAB
+    ════════════════════════════════════════════════════ -->
+    <section class="panel" data-tab="profile">
+      <div class="profile-stack">
+
+        <div class="profile-header">
+          <div class="avatar avatar--large" id="profileAvatar">·</div>
+          <div class="profile-info">
+            <div class="profile-name" id="profileName">—</div>
+            <div class="profile-email" id="profileEmail">Not signed in</div>
+          </div>
+        </div>
+
+        <div class="profile-section">
+          <h3 class="profile-section-title">Account</h3>
+          <button class="profile-row" id="signInRow">
+            <div class="profile-row-icon">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12.48 10.92v3.28h7.84c-.24 1.84-.85 3.18-1.73 4.1-1.08 1.08-2.77 2.27-5.71 2.27-4.55 0-8.11-3.67-8.11-8.22s3.56-8.22 8.11-8.22c2.45 0 4.24.96 5.56 2.21l2.31-2.31C18.99 1.66 16.46.5 13.48.5 7.04.5 1.84 5.7 1.84 12.14s5.2 11.64 11.64 11.64c3.36 0 5.89-1.1 7.86-3.16 2.02-2.02 2.65-4.86 2.65-7.15 0-.71-.05-1.36-.16-1.91h-10.35z" fill="#4285F4"/></svg>
+            </div>
+            <span class="profile-row-label" id="signInLabel">Sign in with Google</span>
+            <span class="profile-row-arrow">›</span>
+          </button>
+          <div class="profile-hint" id="firebaseHint">Sign-in requires Firebase setup (see README). The app fully works without it — data stays on this device.</div>
+        </div>
+
+        <div class="profile-section">
+          <h3 class="profile-section-title">Personal</h3>
+          <div class="profile-field">
+            <label class="profile-field-label">Your name</label>
+            <input type="text" class="profile-field-input" id="profileNameInput" placeholder="—">
+          </div>
+          <button class="profile-row" id="editPracticesRow">
+            <div class="profile-row-icon profile-row-icon--mono">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            </div>
+            <span class="profile-row-label">Edit committed practices</span>
+            <span class="profile-row-arrow">›</span>
+          </button>
+        </div>
+
+        <div class="profile-section">
+          <h3 class="profile-section-title">App</h3>
+          <button class="profile-row" id="installRow" style="display:none">
+            <div class="profile-row-icon profile-row-icon--mono">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            </div>
+            <span class="profile-row-label">Install as app</span>
+            <span class="profile-row-arrow">›</span>
+          </button>
+          <div class="profile-row profile-row--info">
+            <div class="profile-row-icon profile-row-icon--mono">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
+            </div>
+            <span class="profile-row-label">Avodat Hashem · v1.0</span>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
   </main>
+
+  <!-- ── Bottom Tab Bar (mobile) ─────────────────────────── -->
+  <nav class="tab-bar" aria-label="Primary">
+    <button class="tab-bar-btn active" data-tab="today" aria-label="Today">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      <span>Today</span>
+    </button>
+    <button class="tab-bar-btn" data-tab="week" aria-label="Week">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+      <span>Week</span>
+    </button>
+    <button class="tab-bar-btn" data-tab="month" aria-label="Month">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      <span>Month</span>
+    </button>
+    <button class="tab-bar-btn" data-tab="content" aria-label="Daily Content">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+      <span>Read</span>
+    </button>
+    <button class="tab-bar-btn" data-tab="profile" aria-label="Profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      <span>You</span>
+    </button>
+  </nav>
 
   <!-- ── Reader Sheet (full-screen overlay) ─────────────── -->
   <div class="reader-sheet" id="readerSheet" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="readerTitle">
@@ -214,7 +325,76 @@
     </div>
   </div>
 
+  <!-- ── Onboarding Sheet ────────────────────────────────── -->
+  <div class="onboard-sheet" id="onboardSheet" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="onboard-backdrop"></div>
+    <div class="onboard-panel">
+      <div class="onboard-progress">
+        <span class="onboard-dot active" data-step="1"></span>
+        <span class="onboard-dot" data-step="2"></span>
+        <span class="onboard-dot" data-step="3"></span>
+        <span class="onboard-dot" data-step="4"></span>
+      </div>
+
+      <!-- Step 1: Welcome -->
+      <div class="onboard-step active" data-step="1">
+        <div class="onboard-icon"><img src="/icons/icon.svg" alt="" width="72" height="72"></div>
+        <h1 class="onboard-title">Welcome to Avodat Hashem</h1>
+        <p class="onboard-text">A quiet, private space to track the rhythms of your daily practice — prayers, mitzvot, study, and character work.</p>
+        <p class="onboard-text">It takes 30 seconds to set up.</p>
+        <button class="onboard-btn onboard-btn--primary" data-onboard-next>Begin</button>
+      </div>
+
+      <!-- Step 2: Name -->
+      <div class="onboard-step" data-step="2">
+        <h1 class="onboard-title">What's your name?</h1>
+        <p class="onboard-text">We'll greet you each morning.</p>
+        <input type="text" class="onboard-input" id="onboardNameInput" placeholder="Your name" maxlength="40">
+        <button class="onboard-btn onboard-btn--primary" data-onboard-next>Continue</button>
+        <button class="onboard-btn onboard-btn--ghost" data-onboard-skip>Skip</button>
+      </div>
+
+      <!-- Step 3: Practices -->
+      <div class="onboard-step" data-step="3">
+        <h1 class="onboard-title">Your commitments</h1>
+        <p class="onboard-text">Which practices do you commit to daily? You can change this anytime in Profile.</p>
+        <div class="onboard-practices" id="onboardPractices"></div>
+        <button class="onboard-btn onboard-btn--primary" data-onboard-next>Continue</button>
+      </div>
+
+      <!-- Step 4: Sign in -->
+      <div class="onboard-step" data-step="4">
+        <h1 class="onboard-title">Sync across devices</h1>
+        <p class="onboard-text">Sign in with Google so your tracking follows you between phone, tablet, and desktop.</p>
+        <p class="onboard-text onboard-text--small">Your data stays in your private Firestore — no one else can read it.</p>
+        <button class="onboard-btn onboard-btn--google" id="onboardSignIn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12.48 10.92v3.28h7.84c-.24 1.84-.85 3.18-1.73 4.1-1.08 1.08-2.77 2.27-5.71 2.27-4.55 0-8.11-3.67-8.11-8.22s3.56-8.22 8.11-8.22c2.45 0 4.24.96 5.56 2.21l2.31-2.31C18.99 1.66 16.46.5 13.48.5 7.04.5 1.84 5.7 1.84 12.14s5.2 11.64 11.64 11.64c3.36 0 5.89-1.1 7.86-3.16 2.02-2.02 2.65-4.86 2.65-7.15 0-.71-.05-1.36-.16-1.91h-10.35z" fill="#4285F4"/></svg>
+          Sign in with Google
+        </button>
+        <button class="onboard-btn onboard-btn--ghost" data-onboard-finish>Continue without signing in</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Edit Practices Sheet ────────────────────────────── -->
+  <div class="onboard-sheet" id="practicesSheet" aria-hidden="true" role="dialog" aria-modal="true">
+    <div class="onboard-backdrop" data-practices-close></div>
+    <div class="onboard-panel">
+      <div class="onboard-step active">
+        <h1 class="onboard-title">Edit commitments</h1>
+        <p class="onboard-text">Choose the practices you commit to daily.</p>
+        <div class="onboard-practices" id="practicesEditList"></div>
+        <button class="onboard-btn onboard-btn--primary" id="practicesSave">Save</button>
+        <button class="onboard-btn onboard-btn--ghost" data-practices-close>Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Scripts (dependency order) -->
+  <script src="js/firebase-config.js"></script>
+  <script src="js/firebase.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/sync.js"></script>
   <script src="js/storage.js"></script>
   <script src="js/hebrew-cal.js"></script>
   <script src="js/tehilim.js"></script>
@@ -222,6 +402,15 @@
   <script src="js/tracker.js"></script>
   <script src="js/charts.js"></script>
   <script src="js/reader.js"></script>
+  <script src="js/onboarding.js"></script>
   <script src="js/app.js"></script>
+  <script>
+    /* Register service worker for PWA offline shell */
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(() => {});
+      });
+    }
+  </script>
 </body>
 </html>

@@ -38,15 +38,23 @@ const Tracker = {
     if (d.arvit?.done)    pdone++;
     document.getElementById('prayerCount').textContent = `${pdone} / 3`;
 
-    let pr = 0;
-    if (d.mikve)                 pr++;
-    if (d.tehilim)               pr++;
-    if (d.tikounHaklali)         pr++;
-    if (d.torahStudy?.length)    pr++;
-    if (d.hitbodedout?.done)     pr++;
-    if (d.charity?.done)         pr++;
-    if (d.midot?.some(m => m.performed)) pr++;
-    document.getElementById('practiceCount').textContent = `${pr} / 7`;
+    /* Practice count: respects user's committed practices, fast excluded */
+    const profile = Storage.getProfile();
+    const commits = profile.committedPractices || [];
+    const useFilter = commits.length > 0;
+    const allKeys = ['mikve','tehilim','tikounHaklali','torahStudy','hitbodedout','charity','midot'];
+    const counted = useFilter ? allKeys.filter(k => commits.includes(k)) : allKeys;
+    const isDone = {
+      mikve:         d.mikve,
+      tehilim:       d.tehilim,
+      tikounHaklali: d.tikounHaklali,
+      torahStudy:    d.torahStudy?.length > 0,
+      hitbodedout:   d.hitbodedout?.done,
+      charity:       d.charity?.done,
+      midot:         d.midot?.some(m => m.performed)
+    };
+    const pr = counted.filter(k => isDone[k]).length;
+    document.getElementById('practiceCount').textContent = `${pr} / ${counted.length}`;
   },
 
   /* ════════════════ PRAYERS ════════════════ */
@@ -118,18 +126,35 @@ const Tracker = {
 
   /* ════════════════ PRACTICES ════════════════ */
   _renderPractices() {
-    const rows = [
-      this._simpleRow('mikve',         'מִקְוֶה',          'Mikve'),
-      this._simpleRow('tehilim',       'תְּהִלִּים',         'Tehilim'),
-      this._simpleRow('tikounHaklali', 'תִּקּוּן הַכְּלָלִי', 'Tikoun Haklali'),
-      this._torahRow(),
-      this._hitbodedoutRow(),
-      this._tzedakaRow(),
-      this._fastRow(),
-      this._midotRow()
+    const profile  = Storage.getProfile();
+    const commits  = profile.committedPractices || [];
+    const useFilter = commits.length > 0; // empty = legacy mode, show all as committed
+    const isCommitted = (key) => !useFilter || commits.includes(key);
+
+    const items = [
+      { key: 'mikve',         html: this._simpleRow('mikve',         'מִקְוֶה',           'Mikve') },
+      { key: 'tehilim',       html: this._simpleRow('tehilim',       'תְּהִלִּים',          'Tehilim') },
+      { key: 'tikounHaklali', html: this._simpleRow('tikounHaklali', 'תִּקּוּן הַכְּלָלִי',  'Tikoun Haklali') },
+      { key: 'torahStudy',    html: this._torahRow() },
+      { key: 'hitbodedout',   html: this._hitbodedoutRow() },
+      { key: 'charity',       html: this._tzedakaRow() },
+      { key: 'midot',         html: this._midotRow() },
+      { key: 'fast',          html: this._fastRow(), alwaysOther: true }
     ];
-    document.getElementById('practiceRows').innerHTML = rows.join('');
+
+    const main  = items.filter(i => !i.alwaysOther && isCommitted(i.key)).map(i => i.html).join('');
+    const other = items.filter(i =>  i.alwaysOther || !isCommitted(i.key)).map(i => i.html).join('');
+
+    document.getElementById('practiceRows').innerHTML = main;
+    document.getElementById('otherRows').innerHTML    = other;
+
+    /* Hide "Other practices" disclosure if it has no content */
+    const otherWrap = document.getElementById('otherPractices');
+    if (otherWrap) otherWrap.style.display = other ? '' : 'none';
+
+    /* Bind events across both containers */
     this._bindRowTriggers('practiceRows');
+    this._bindRowTriggers('otherRows');
     this._bindTorahDetail();
     this._bindHitbodedoutDetail();
     this._bindTzedakaDetail();
