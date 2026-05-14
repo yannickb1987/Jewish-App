@@ -11,9 +11,52 @@ const App = {
     this._bindTabNav();
     this._bindDateNav();
     this._bindThemeToggle();
+    this._bindReaderTriggers();
+    Reader.init();
     document.body.setAttribute('data-active-tab', 'today');
     await this._updateHero();
     this._showTab('today');
+  },
+
+  /* ── Reader triggers (Tehilim, Tikoun, Halacha) ── */
+  _bindReaderTriggers() {
+    document.getElementById('tehilimRead').addEventListener('click', () => this._openTehilimReader());
+    document.getElementById('tikounRead').addEventListener('click',   () => this._openTikounReader());
+  },
+
+  _openTehilimReader() {
+    const hd    = this._hebrewDay || 1;
+    const entry = Tehilim.getForHebrewDay(hd);
+    Reader.open({
+      eyebrow:     `Psalms of the Day · Day ${hd}`,
+      title:       `Psalms ${entry.psalms}`,
+      heTitle:     `תהילים ${entry.label}`,
+      refs:        [entry.ref],
+      action:      'tehilim',
+      actionLabel: 'Mark Tehilim complete'
+    });
+  },
+
+  _openTikounReader() {
+    const refs = Tehilim.tikounHaklali.nums.map(n => `Psalms.${n}`);
+    Reader.open({
+      eyebrow:     'Tikoun Haklali',
+      title:       'The Ten Psalms of General Rectification',
+      heTitle:     'תִּקּוּן הַכְּלָלִי',
+      refs,
+      action:      'tikounHaklali',
+      actionLabel: 'Mark Tikoun complete'
+    });
+  },
+
+  _openHalachaReader(halacha) {
+    Reader.open({
+      eyebrow:     'Daily Halacha · Kitzur Shulchan Aruch',
+      title:       `Chapter ${halacha.chapter}`,
+      heTitle:     halacha.heTitle || '',
+      refs:        [halacha.ref],
+      action:      null
+    });
   },
 
   /* ── Theme ── */
@@ -159,15 +202,26 @@ const App = {
         body.innerHTML = '<div class="empty-state">Could not load halachot right now.</div>';
         return;
       }
-      body.innerHTML = halachot.map(h => `
+      body.innerHTML = halachot.map((h, i) => `
         <div class="halacha-item">
           <div class="halacha-chapter">Chapter ${h.chapter}</div>
           ${h.heTitle ? `<div class="halacha-title" dir="rtl">${h.heTitle}</div>` : ''}
           ${h.text ? `<div class="halacha-text">${_truncate(h.text, 360)}</div>` : ''}
-          <a class="content-cta" href="${h.url}" target="_blank">
-            Read more in Sefaria <span class="cta-arrow">↗</span>
-          </a>
+          <div class="content-actions" style="margin-top:8px">
+            <button class="content-cta content-cta--primary" data-halacha-read="${i}">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+              Read Full Chapter
+            </button>
+            <a class="content-cta content-cta--secondary" href="${h.url}" target="_blank">Sefaria <span class="cta-arrow">↗</span></a>
+          </div>
         </div>`).join('');
+
+      body.querySelectorAll('[data-halacha-read]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const i = parseInt(btn.dataset.halachaRead);
+          this._openHalachaReader(halachot[i]);
+        });
+      });
     } catch {
       body.innerHTML = '<div class="empty-state">Error loading halachot.</div>';
     }
