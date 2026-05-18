@@ -1,160 +1,112 @@
-/* ── Tracker (Row-based) ────────────────────────────────────
-   Renders Today tab as expandable rows.
-   Status dot · Hebrew name · English label · summary · chevron
-   Tap row to expand inline details (time, intensity dots, etc.).
+/* ── Tracker (Kanban) ───────────────────────────────────────
+   Today tab as a 2-column Kanban board: To Do / Done.
+   - Single unified card list (all 10 practices)
+   - Tap status icon to toggle done (card flies across columns)
+   - Tap card body to expand inline detail panel
+   - FLIP animation for smooth card movement
+   - Mobile: segmented control switches columns
 ──────────────────────────────────────────────────────────── */
 const Tracker = {
   currentDate: null,
   data: null,
   _expanded: new Set(),
 
+  /* All practices (excluding the 3 prayers, which we add to this list) */
+  PRACTICE_DEFS: [
+    { key: 'shaharit',      he: 'שַׁחֲרִית',         en: 'Shaharit',          cat: 'prayer'  },
+    { key: 'mincha',        he: 'מִנְחָה',            en: 'Mincha',            cat: 'prayer'  },
+    { key: 'arvit',         he: 'עַרְבִית',           en: 'Arvit',             cat: 'prayer'  },
+    { key: 'mikve',         he: 'מִקְוֶה',            en: 'Mikve',             cat: 'mitzvah' },
+    { key: 'tehilim',       he: 'תְּהִלִּים',          en: 'Tehilim',           cat: 'mitzvah' },
+    { key: 'tikounHaklali', he: 'תִּקּוּן הַכְּלָלִי',  en: 'Tikoun Haklali',    cat: 'mitzvah' },
+    { key: 'torahStudy',    he: 'לִמּוּד תּוֹרָה',     en: 'Torah Study',       cat: 'study'   },
+    { key: 'hitbodedout',   he: 'הִתְבּוֹדְדוּת',       en: 'Hitbodedut',        cat: 'inner'   },
+    { key: 'charity',       he: 'צְדָקָה',            en: 'Tzedaka',           cat: 'mitzvah' },
+    { key: 'midot',         he: 'מִדּוֹת',             en: 'Midot',             cat: 'inner'   },
+    { key: 'fast',          he: 'תַּעֲנִית',           en: 'Fast (Ta\'anit)',    cat: 'special' }
+  ],
+
+  /* ════════════════ Render ════════════════ */
   render(dateStr) {
     this.currentDate = dateStr;
     this.data = Storage.getDay(dateStr);
-    this._renderPrayers();
-    this._renderPractices();
+    this._renderBoard();
     this._updateScore();
-    this._updateCounts();
   },
 
   _save() {
     Storage.saveDay(this.currentDate, this.data);
     this._updateScore();
-    this._updateCounts();
   },
 
   _updateScore() {
     const score = Storage.computeScore(this.data);
-    const max = 10;
     document.getElementById('scoreNum').textContent = score;
-    document.getElementById('heroProgressFill').style.width = `${(score / max) * 100}%`;
+    document.getElementById('heroProgressFill').style.width = `${(score / 10) * 100}%`;
   },
 
-  _updateCounts() {
-    const d = this.data;
-    let pdone = 0;
-    if (d.shaharit?.done) pdone++;
-    if (d.mincha?.done)   pdone++;
-    if (d.arvit?.done)    pdone++;
-    document.getElementById('prayerCount').textContent = `${pdone} / 3`;
-
-    /* Practice count: respects user's committed practices, fast excluded */
+  /* ── Build & route practice cards into To Do / Done / Other ── */
+  _renderBoard() {
     const profile = Storage.getProfile();
     const commits = profile.committedPractices || [];
     const useFilter = commits.length > 0;
-    const allKeys = ['mikve','tehilim','tikounHaklali','torahStudy','hitbodedout','charity','midot'];
-    const counted = useFilter ? allKeys.filter(k => commits.includes(k)) : allKeys;
-    const isDone = {
-      mikve:         d.mikve,
-      tehilim:       d.tehilim,
-      tikounHaklali: d.tikounHaklali,
-      torahStudy:    d.torahStudy?.length > 0,
-      hitbodedout:   d.hitbodedout?.done,
-      charity:       d.charity?.done,
-      midot:         d.midot?.some(m => m.performed)
+
+    /* Build a card descriptor for each practice */
+    const cards = this.PRACTICE_DEFS.map(def => this._buildCard(def));
+
+    /* Split into committed (board) and other (collapsible) */
+    const isCommitted = (key, alwaysOther) => {
+      if (alwaysOther) return false;
+      return !useFilter || commits.includes(key);
     };
-    const pr = counted.filter(k => isDone[k]).length;
-    document.getElementById('practiceCount').textContent = `${pr} / ${counted.length}`;
-  },
 
-  /* ════════════════ PRAYERS ════════════════ */
-  _renderPrayers() {
-    const prayers = [
-      { key: 'shaharit', he: 'שַׁחֲרִית', en: 'Shaharit' },
-      { key: 'mincha',   he: 'מִנְחָה',    en: 'Mincha' },
-      { key: 'arvit',    he: 'עַרְבִית',   en: 'Arvit' }
-    ];
-    document.getElementById('prayerRows').innerHTML = prayers
-      .map(p => this._prayerRow(p)).join('');
-    this._bindRowTriggers('prayerRows');
-    prayers.forEach(p => this._bindPrayerDetail(p.key));
-  },
+    /* Fast is always shown only if today is marked as a fast day */
+    const showFast = this.data.fast?.isAFastDay;
 
-  _prayerRow({ key, he, en }) {
-    const p = this.data[key];
-    const expanded = this._expanded.has(key);
-    const summary = p.time ? p.time : (p.done ? '✓' : '—');
-    return `
-      <div class="row" data-key="${key}" data-done="${p.done}" data-expanded="${expanded}">
-        <button class="row-trigger" data-toggle-expand="${key}">
-          <span class="row-dot" data-toggle-done="${key}"></span>
-          <span class="row-label">
-            <span class="row-he" dir="rtl">${he}</span>
-            <span class="row-en">${en}</span>
-          </span>
-          <span class="row-summary ${!p.time && !p.done ? 'empty' : ''}">${summary}</span>
-          <span class="row-chevron">${_chevron()}</span>
-        </button>
-        <div class="row-detail">
-          <div class="detail-grid">
-            <div>
-              <label class="field-label">Time</label>
-              <input type="time" class="input-time" data-field="${key}.time" value="${p.time || ''}">
-            </div>
-            <div>
-              <label class="field-label">Intensity (1–5)</label>
-              ${this._intensityDots(`${key}.intensity`, p.intensity)}
-            </div>
-          </div>
-        </div>
-      </div>`;
-  },
-
-  _bindPrayerDetail(key) {
-    const row = document.querySelector(`.row[data-key="${key}"]`);
-    if (!row) return;
-    row.querySelector(`input[data-field="${key}.time"]`)?.addEventListener('input', e => {
-      this.data[key].time = e.target.value;
-      this._save();
-      this._refreshRowSummary(key);
+    const boardCards = cards.filter(c => {
+      if (c.key === 'fast') return showFast;
+      return isCommitted(c.key, false);
     });
-    this._bindIntensity(row, `${key}.intensity`);
-  },
+    const otherCards = cards.filter(c => {
+      if (c.key === 'fast') return !showFast;
+      return !isCommitted(c.key, false);
+    });
 
-  _refreshRowSummary(key) {
-    const row = document.querySelector(`.row[data-key="${key}"]`);
-    if (!row) return;
-    const p = this.data[key];
-    const summaryEl = row.querySelector('.row-summary');
-    if (!p) return;
-    if (p.time !== undefined) {
-      const txt = p.time ? p.time : (p.done ? '✓' : '—');
-      summaryEl.textContent = txt;
-      summaryEl.classList.toggle('empty', !p.time && !p.done);
-    }
-  },
+    const todo = boardCards.filter(c => !c.isDone);
+    const done = boardCards.filter(c =>  c.isDone);
 
-  /* ════════════════ PRACTICES ════════════════ */
-  _renderPractices() {
-    const profile  = Storage.getProfile();
-    const commits  = profile.committedPractices || [];
-    const useFilter = commits.length > 0; // empty = legacy mode, show all as committed
-    const isCommitted = (key) => !useFilter || commits.includes(key);
+    /* Empty states */
+    const emptyTodo = `
+      <div class="kanban-empty">
+        <div class="kanban-empty-icon">✨</div>
+        <div class="kanban-empty-text">Day complete — beautiful work.</div>
+      </div>`;
+    const emptyDone = `
+      <div class="kanban-empty">
+        <div class="kanban-empty-text">Tap a card to begin.</div>
+      </div>`;
 
-    const items = [
-      { key: 'mikve',         html: this._simpleRow('mikve',         'מִקְוֶה',           'Mikve') },
-      { key: 'tehilim',       html: this._simpleRow('tehilim',       'תְּהִלִּים',          'Tehilim') },
-      { key: 'tikounHaklali', html: this._simpleRow('tikounHaklali', 'תִּקּוּן הַכְּלָלִי',  'Tikoun Haklali') },
-      { key: 'torahStudy',    html: this._torahRow() },
-      { key: 'hitbodedout',   html: this._hitbodedoutRow() },
-      { key: 'charity',       html: this._tzedakaRow() },
-      { key: 'midot',         html: this._midotRow() },
-      { key: 'fast',          html: this._fastRow(), alwaysOther: true }
-    ];
+    document.getElementById('todoCards').innerHTML =
+      todo.length ? todo.map(c => c.html).join('') : emptyTodo;
+    document.getElementById('doneCards').innerHTML =
+      done.length ? done.map(c => c.html).join('') : emptyDone;
+    document.getElementById('otherCards').innerHTML =
+      otherCards.map(c => c.html).join('');
 
-    const main  = items.filter(i => !i.alwaysOther && isCommitted(i.key)).map(i => i.html).join('');
-    const other = items.filter(i =>  i.alwaysOther || !isCommitted(i.key)).map(i => i.html).join('');
+    /* Counts */
+    document.getElementById('todoCount').textContent  = todo.length;
+    document.getElementById('doneCount').textContent  = done.length;
+    document.getElementById('segCountTodo').textContent = todo.length;
+    document.getElementById('segCountDone').textContent = done.length;
 
-    document.getElementById('practiceRows').innerHTML = main;
-    document.getElementById('otherRows').innerHTML    = other;
-
-    /* Hide "Other practices" disclosure if it has no content */
+    /* Show "Other" wrapper only if non-empty */
     const otherWrap = document.getElementById('otherPractices');
-    if (otherWrap) otherWrap.style.display = other ? '' : 'none';
+    if (otherWrap) otherWrap.style.display = otherCards.length ? '' : 'none';
 
-    /* Bind events across both containers */
-    this._bindRowTriggers('practiceRows');
-    this._bindRowTriggers('otherRows');
+    /* Bind events */
+    this._bindCardEvents();
+    /* Per-practice detail bindings (these query inside .kanban-detail) */
+    this._bindPrayerInputs();
     this._bindTorahDetail();
     this._bindHitbodedoutDetail();
     this._bindTzedakaDetail();
@@ -162,39 +114,150 @@ const Tracker = {
     this._bindMidotDetail();
   },
 
-  /* Simple toggle row (no expand) */
-  _simpleRow(key, he, en) {
-    const done = this.data[key];
-    return `
-      <div class="row" data-key="${key}" data-done="${done}" data-simple="true">
-        <button class="row-trigger" data-simple-toggle="${key}">
-          <span class="row-dot"></span>
-          <span class="row-label">
-            <span class="row-he" dir="rtl">${he}</span>
-            <span class="row-en">${en}</span>
-          </span>
-          <span class="row-summary ${done ? '' : 'empty'}">${done ? '✓' : '—'}</span>
-          <span class="row-chevron" style="visibility:hidden">${_chevron()}</span>
+  /* ── Card descriptor builder ── */
+  _buildCard(def) {
+    const isDone     = this._isDone(def.key);
+    const summary    = this._buildSummary(def.key);
+    const detailHtml = this._buildDetail(def);
+    const expanded   = this._expanded.has(def.key);
+    const expandable = detailHtml.length > 0;
+
+    const summaryHtml = isDone && summary
+      ? `<div class="kanban-summary">${summary}</div>`
+      : (!isDone ? '<div class="kanban-summary-hint">tap to mark complete</div>' : '');
+
+    const html = `
+      <div class="kanban-card"
+           data-key="${def.key}"
+           data-done="${isDone}"
+           data-expandable="${expandable}"
+           data-expanded="${expanded}">
+        <span class="kanban-category" data-cat="${def.cat}"></span>
+        <button class="kanban-status" data-toggle-status="${def.key}" aria-label="${isDone ? 'Mark not done' : 'Mark done'}">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
         </button>
+        <div class="kanban-card-body" data-toggle-expand="${def.key}">
+          <div class="kanban-name">
+            <span class="kanban-name-he" dir="rtl">${def.he}</span>
+            <span class="kanban-name-en">${def.en}</span>
+          </div>
+          ${summaryHtml}
+          ${detailHtml ? `<div class="kanban-detail">${detailHtml}</div>` : ''}
+        </div>
       </div>`;
+
+    return { ...def, isDone, html };
   },
 
-  /* Torah Study row */
-  _torahRow() {
-    const sessions = this.data.torahStudy || [];
-    const done = sessions.length > 0;
-    const expanded = this._expanded.has('torahStudy');
-    const totalMin = sessions.reduce((sum, s) => sum + (parseInt(s.duration) || 0), 0);
-    const summary = done ? (totalMin ? `${totalMin} min` : `${sessions.length} session${sessions.length>1?'s':''}`) : '—';
+  /* ── Is this practice done? ── */
+  _isDone(key) {
+    const d = this.data;
+    switch (key) {
+      case 'shaharit':       return !!d.shaharit?.done;
+      case 'mincha':         return !!d.mincha?.done;
+      case 'arvit':          return !!d.arvit?.done;
+      case 'mikve':          return !!d.mikve;
+      case 'tehilim':        return !!d.tehilim;
+      case 'tikounHaklali':  return !!d.tikounHaklali;
+      case 'torahStudy':     return (d.torahStudy || []).length > 0;
+      case 'hitbodedout':    return !!d.hitbodedout?.done;
+      case 'charity':        return !!d.charity?.done;
+      case 'midot':          return (d.midot || []).some(m => m.performed);
+      case 'fast':           return !!d.fast?.performed;
+    }
+    return false;
+  },
 
+  /* ── Build a compact "done" summary chip row for a card ── */
+  _buildSummary(key) {
+    const d = this.data;
+    const intensityDots = (val) => {
+      const filled = Math.ceil((val || 0) / 2);
+      return '●'.repeat(filled) + '○'.repeat(5 - filled);
+    };
+    switch (key) {
+      case 'shaharit':
+      case 'mincha':
+      case 'arvit': {
+        const p = d[key];
+        const chips = [];
+        if (p.time)      chips.push(`<span class="chip">${p.time}</span>`);
+        if (p.intensity) chips.push(`<span class="chip">${intensityDots(p.intensity)}</span>`);
+        return chips.join(' ');
+      }
+      case 'mikve':
+      case 'tehilim':
+      case 'tikounHaklali':
+        return ''; // no extra data
+      case 'torahStudy': {
+        const sessions = d.torahStudy || [];
+        const totalMin = sessions.reduce((s, x) => s + (parseInt(x.duration) || 0), 0);
+        if (totalMin)        return `<span class="chip">${totalMin} min</span>`;
+        if (sessions.length) return `<span class="chip">${sessions.length} session${sessions.length>1?'s':''}</span>`;
+        return '';
+      }
+      case 'hitbodedout': {
+        const h = d.hitbodedout;
+        return h.duration ? `<span class="chip">${h.duration} min</span>` : '';
+      }
+      case 'charity': {
+        const c = d.charity;
+        const settings = Storage.getSettings();
+        return c.amount ? `<span class="chip">${settings.currency}${c.amount}</span>` : '';
+      }
+      case 'midot': {
+        const active = (d.midot || []).filter(m => m.performed);
+        if (!active.length) return '';
+        const traits = active.map(m => m.trait).filter(Boolean).slice(0, 2).join(', ');
+        return traits
+          ? `<span class="chip">${active.length} active · ${traits}</span>`
+          : `<span class="chip">${active.length} active</span>`;
+      }
+      case 'fast':
+        return d.fast?.performed ? '<span class="chip">Completed</span>' : '';
+    }
+    return '';
+  },
+
+  /* ── Build the expandable detail HTML for a card ── */
+  _buildDetail(def) {
+    const d = this.data;
+    switch (def.key) {
+      case 'shaharit':
+      case 'mincha':
+      case 'arvit': {
+        const p = d[def.key];
+        return `
+          <div class="detail-grid">
+            <div>
+              <label class="field-label">Time</label>
+              <input type="time" class="input-time" data-field="${def.key}.time" value="${p.time || ''}">
+            </div>
+            <div>
+              <label class="field-label">Intensity (1–5)</label>
+              ${this._intensityDots(`${def.key}.intensity`, p.intensity)}
+            </div>
+          </div>`;
+      }
+      case 'torahStudy':       return this._torahDetail();
+      case 'hitbodedout':      return this._hitbodedoutDetail();
+      case 'charity':          return this._tzedakaDetail();
+      case 'fast':             return this._fastDetail();
+      case 'midot':            return this._midotDetail();
+      default:                 return ''; // simple toggles, no detail
+    }
+  },
+
+  /* ════════════════ Detail builders ════════════════ */
+  _torahDetail() {
+    const sessions = this.data.torahStudy || [];
     const subjects = [
       { val: 'houmash',   he: 'חוּמָשׁ',   en: 'Chumash' },
       { val: 'gemara',    he: 'גְּמָרָא',   en: 'Gemara' },
       { val: 'hassidout', he: 'חֲסִידוּת', en: 'Hassidut' },
       { val: 'halacha',   he: 'הֲלָכָה',   en: 'Halacha' }
     ];
-
-    const sessionHtml = sessions.map((s, i) => `
+    const items = sessions.map((s, i) => `
       <div class="session-row" data-session="${i}">
         <select data-session-field="${i}.subject" class="input-text">
           <option value="">Subject…</option>
@@ -207,23 +270,227 @@ const Tracker = {
         </div>
         <button class="remove-x" data-remove-session="${i}" aria-label="Remove">✕</button>
       </div>`).join('');
-
     return `
-      <div class="row" data-key="torahStudy" data-done="${done}" data-expanded="${expanded}">
-        <button class="row-trigger" data-toggle-expand="torahStudy">
-          <span class="row-dot"></span>
-          <span class="row-label">
-            <span class="row-he" dir="rtl">לִמּוּד תּוֹרָה</span>
-            <span class="row-en">Torah Study</span>
-          </span>
-          <span class="row-summary ${!done ? 'empty' : ''}">${summary}</span>
-          <span class="row-chevron">${_chevron()}</span>
-        </button>
-        <div class="row-detail">
-          <div class="session-list">${sessionHtml}</div>
-          <button class="add-btn" id="addTorahSession">＋ Add study session</button>
+      <div class="session-list">${items}</div>
+      <button class="add-btn" id="addTorahSession">＋ Add study session</button>`;
+  },
+
+  _hitbodedoutDetail() {
+    const h = this.data.hitbodedout || { done: false, duration: '' };
+    return `
+      <div class="detail-grid">
+        <div>
+          <label class="field-label">Duration</label>
+          <div class="input-duration">
+            <input type="number" min="1" max="240" placeholder="20" data-field="hitbodedout.duration" value="${h.duration || ''}">
+            <span class="suffix">minutes</span>
+          </div>
         </div>
       </div>`;
+  },
+
+  _tzedakaDetail() {
+    const c = this.data.charity || { done: false, amount: '' };
+    const settings = Storage.getSettings();
+    return `
+      <div class="detail-grid">
+        <div>
+          <label class="field-label">Amount</label>
+          <div class="input-money">
+            <span class="currency">${settings.currency}</span>
+            <input type="number" min="0" step="0.01" placeholder="0.00" data-field="charity.amount" value="${c.amount || ''}">
+          </div>
+        </div>
+      </div>`;
+  },
+
+  _fastDetail() {
+    const f = this.data.fast || { isAFastDay: false, performed: false };
+    return `
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <button class="pill-toggle ${f.isAFastDay ? 'on' : ''}" data-toggle-fastday>${f.isAFastDay ? 'Yes, fast day' : 'Mark as fast day'}</button>
+          <span style="font-size:.85rem;color:var(--text-3)">Today is a fast day</span>
+        </div>
+        ${f.isAFastDay ? `
+        <div style="display:flex;align-items:center;gap:12px">
+          <button class="pill-toggle ${f.performed ? 'on' : ''}" data-toggle-performed>${f.performed ? 'Completed' : 'Mark complete'}</button>
+          <span style="font-size:.85rem;color:var(--text-3)">I completed the fast</span>
+        </div>` : ''}
+      </div>`;
+  },
+
+  _midotDetail() {
+    const midot = this.data.midot || [];
+    const traits = Storage.getKnownTraits();
+    const items = midot.map((m, i) => `
+      <div class="midot-card" data-midah="${i}">
+        <div class="midot-card-head">
+          <input type="text" class="midot-trait-input"
+            list="known-traits"
+            placeholder="Trait name (e.g., Humility, Patience…)"
+            data-midah-field="${i}.trait" value="${m.trait || ''}">
+          <button class="midot-toggle ${m.performed ? 'on' : ''}" data-midah-toggle="${i}">${m.performed ? '✓ Worked on' : 'Mark'}</button>
+          <button class="remove-x" data-remove-midah="${i}" aria-label="Remove">✕</button>
+        </div>
+        ${m.performed ? `
+        <div>
+          <label class="field-label">Work intensity (1–5)</label>
+          ${this._intensityDots(`midah-${i}.intensity`, m.intensity, i)}
+        </div>` : ''}
+      </div>`).join('');
+    return `
+      <datalist id="known-traits">
+        ${traits.map(t => `<option value="${t}">`).join('')}
+      </datalist>
+      <div class="midot-list">${items}</div>
+      <button class="add-btn" id="addMidah">＋ Add character trait</button>`;
+  },
+
+  /* ════════════════ Bindings ════════════════ */
+
+  /* Card-level events: status toggle, body tap (expand or toggle) */
+  _bindCardEvents() {
+    /* Status icon = toggle done with FLIP animation */
+    document.querySelectorAll('.kanban-status[data-toggle-status]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const key = btn.dataset.toggleStatus;
+        this._toggleDone(key);
+      });
+    });
+
+    /* Card body = expand details (or toggle if no details) */
+    document.querySelectorAll('.kanban-card-body[data-toggle-expand]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('input, button, select, textarea, label, a, .midot-card, .session-row, .pill-toggle, .midot-toggle, .add-btn, .remove-x, .intensity-dot, .midot-trait-input')) return;
+        const key = el.dataset.toggleExpand;
+        const card = el.closest('.kanban-card');
+        const expandable = card.dataset.expandable === 'true';
+        if (!expandable) {
+          this._toggleDone(key);
+          return;
+        }
+        if (this._expanded.has(key)) this._expanded.delete(key);
+        else this._expanded.add(key);
+        card.setAttribute('data-expanded', this._expanded.has(key));
+      });
+    });
+  },
+
+  /* ── Toggle done with FLIP animation ── */
+  _toggleDone(key) {
+    /* Capture positions of all current cards */
+    const oldRects = {};
+    document.querySelectorAll('.kanban-card[data-key]').forEach(el => {
+      oldRects[el.dataset.key] = el.getBoundingClientRect();
+    });
+
+    /* Flip state */
+    this._setDone(key, !this._isDone(key));
+    this._save();
+
+    /* Auto-collapse the toggled card (UX choice) */
+    this._expanded.delete(key);
+
+    /* Re-render */
+    this._renderBoard();
+
+    /* FLIP animate */
+    this._playFlip(oldRects, key);
+  },
+
+  _setDone(key, val) {
+    const d = this.data;
+    switch (key) {
+      case 'shaharit': case 'mincha': case 'arvit':
+        d[key].done = val;
+        if (val && !d[key].time) {
+          const now = new Date();
+          d[key].time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+        }
+        break;
+      case 'mikve': case 'tehilim': case 'tikounHaklali':
+        d[key] = val;
+        break;
+      case 'torahStudy':
+        if (val && (!d.torahStudy || !d.torahStudy.length)) {
+          d.torahStudy = [{ subject: '', startTime: '', duration: '' }];
+        } else if (!val) {
+          d.torahStudy = [];
+        }
+        break;
+      case 'hitbodedout':
+        if (!d.hitbodedout) d.hitbodedout = { done: false, duration: '' };
+        d.hitbodedout.done = val;
+        break;
+      case 'charity':
+        if (!d.charity) d.charity = { done: false, amount: '' };
+        d.charity.done = val;
+        break;
+      case 'midot':
+        if (val && (!d.midot || !d.midot.length)) {
+          d.midot = [{ trait: '', performed: true, intensity: 0 }];
+        } else if (!val) {
+          (d.midot || []).forEach(m => m.performed = false);
+        }
+        break;
+      case 'fast':
+        if (!d.fast) d.fast = { isAFastDay: true, performed: false };
+        d.fast.isAFastDay = true;
+        d.fast.performed = val;
+        break;
+    }
+  },
+
+  _playFlip(oldRects, justCompletedKey) {
+    const cards = document.querySelectorAll('.kanban-card[data-key]');
+    cards.forEach(card => {
+      const key = card.dataset.key;
+      const old = oldRects[key];
+      if (!old) return;
+      const now = card.getBoundingClientRect();
+      /* Skip if either rect is in a hidden column (display:none) */
+      if (now.width === 0 || old.width === 0) return;
+      const dx = old.left - now.left;
+      const dy = old.top  - now.top;
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+
+      card.classList.add('flipping');
+      card.style.transform = `translate(${dx}px, ${dy}px)`;
+      /* Force layout */
+      void card.offsetWidth;
+      requestAnimationFrame(() => {
+        card.style.transform = '';
+      });
+      card.addEventListener('transitionend', () => {
+        card.classList.remove('flipping');
+        card.style.transform = '';
+      }, { once: true });
+    });
+
+    /* Celebration on the card that was just completed */
+    if (justCompletedKey) {
+      const c = document.querySelector(`.kanban-card[data-key="${justCompletedKey}"][data-done="true"]`);
+      if (c) {
+        c.classList.add('just-completed');
+        setTimeout(() => c.classList.remove('just-completed'), 700);
+      }
+    }
+  },
+
+  /* ════════════════ Per-practice detail bindings ════════════════ */
+  _bindPrayerInputs() {
+    ['shaharit','mincha','arvit'].forEach(key => {
+      const card = document.querySelector(`.kanban-card[data-key="${key}"]`);
+      if (!card) return;
+      card.querySelector(`input[data-field="${key}.time"]`)?.addEventListener('input', e => {
+        this.data[key].time = e.target.value;
+        this._save();
+        this._refreshCardSummary(key);
+      });
+      this._bindIntensity(card, `${key}.intensity`);
+    });
   },
 
   _bindTorahDetail() {
@@ -233,7 +500,7 @@ const Tracker = {
         if (!this.data.torahStudy[idx]) return;
         this.data.torahStudy[idx][field] = el.type === 'number' ? (parseInt(el.value) || '') : el.value;
         this._save();
-        this._refreshTorahSummary();
+        this._refreshCardSummary('torahStudy');
       };
       el.addEventListener('input', handler);
       el.addEventListener('change', handler);
@@ -245,143 +512,35 @@ const Tracker = {
         this.data.torahStudy.splice(i, 1);
         this._save();
         this._expanded.add('torahStudy');
-        this._renderPractices();
+        this._renderBoard();
       });
     });
     document.getElementById('addTorahSession')?.addEventListener('click', e => {
       e.stopPropagation();
+      if (!this.data.torahStudy) this.data.torahStudy = [];
       this.data.torahStudy.push({ subject: '', startTime: '', duration: '' });
       this._save();
       this._expanded.add('torahStudy');
-      this._renderPractices();
+      this._renderBoard();
     });
   },
 
-  _refreshTorahSummary() {
-    const row = document.querySelector('.row[data-key="torahStudy"]');
-    if (!row) return;
-    const sessions = this.data.torahStudy || [];
-    const done = sessions.length > 0;
-    row.setAttribute('data-done', done);
-    const totalMin = sessions.reduce((sum, s) => sum + (parseInt(s.duration) || 0), 0);
-    const summary = done ? (totalMin ? `${totalMin} min` : `${sessions.length} session${sessions.length>1?'s':''}`) : '—';
-    const sumEl = row.querySelector('.row-summary');
-    sumEl.textContent = summary;
-    sumEl.classList.toggle('empty', !done);
-  },
-
-  /* Hitbodedut */
-  _hitbodedoutRow() {
-    const h = this.data.hitbodedout || { done: false, duration: '' };
-    const expanded = this._expanded.has('hitbodedout');
-    const summary = h.done ? (h.duration ? `${h.duration} min` : '✓') : '—';
-    return `
-      <div class="row" data-key="hitbodedout" data-done="${h.done}" data-expanded="${expanded}">
-        <button class="row-trigger" data-toggle-expand="hitbodedout">
-          <span class="row-dot" data-toggle-done="hitbodedout"></span>
-          <span class="row-label">
-            <span class="row-he" dir="rtl">הִתְבּוֹדְדוּת</span>
-            <span class="row-en">Hitbodedut · Personal Prayer</span>
-          </span>
-          <span class="row-summary ${!h.done ? 'empty' : ''}">${summary}</span>
-          <span class="row-chevron">${_chevron()}</span>
-        </button>
-        <div class="row-detail">
-          <div class="detail-grid">
-            <div>
-              <label class="field-label">Duration</label>
-              <div class="input-duration">
-                <input type="number" min="1" max="240" placeholder="20" data-field="hitbodedout.duration" value="${h.duration || ''}">
-                <span class="suffix">minutes</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>`;
-  },
   _bindHitbodedoutDetail() {
     document.querySelector('input[data-field="hitbodedout.duration"]')?.addEventListener('input', e => {
       this.data.hitbodedout.duration = parseInt(e.target.value) || '';
       this._save();
-      this._refreshSimpleSummary('hitbodedout', this.data.hitbodedout.duration ? `${this.data.hitbodedout.duration} min` : (this.data.hitbodedout.done ? '✓' : '—'));
+      this._refreshCardSummary('hitbodedout');
     });
   },
 
-  /* Tzedaka */
-  _tzedakaRow() {
-    const c = this.data.charity || { done: false, amount: '' };
-    const expanded = this._expanded.has('charity');
-    const settings = Storage.getSettings();
-    const summary = c.done
-      ? (c.amount ? `${settings.currency}${c.amount}` : '✓')
-      : '—';
-    return `
-      <div class="row" data-key="charity" data-done="${c.done}" data-expanded="${expanded}">
-        <button class="row-trigger" data-toggle-expand="charity">
-          <span class="row-dot" data-toggle-done="charity"></span>
-          <span class="row-label">
-            <span class="row-he" dir="rtl">צְדָקָה</span>
-            <span class="row-en">Tzedaka · Charity</span>
-          </span>
-          <span class="row-summary ${!c.done ? 'empty' : ''}">${summary}</span>
-          <span class="row-chevron">${_chevron()}</span>
-        </button>
-        <div class="row-detail">
-          <div class="detail-grid">
-            <div>
-              <label class="field-label">Amount</label>
-              <div class="input-money">
-                <span class="currency">${settings.currency}</span>
-                <input type="number" min="0" step="0.01" placeholder="0.00" data-field="charity.amount" value="${c.amount || ''}">
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>`;
-  },
   _bindTzedakaDetail() {
     document.querySelector('input[data-field="charity.amount"]')?.addEventListener('input', e => {
       this.data.charity.amount = parseFloat(e.target.value) || '';
       this._save();
-      const settings = Storage.getSettings();
-      const c = this.data.charity;
-      const summary = c.done ? (c.amount ? `${settings.currency}${c.amount}` : '✓') : '—';
-      this._refreshSimpleSummary('charity', summary);
+      this._refreshCardSummary('charity');
     });
   },
 
-  /* Fast Day */
-  _fastRow() {
-    const f = this.data.fast || { isAFastDay: false, performed: false };
-    const expanded = this._expanded.has('fast');
-    const done = f.isAFastDay && f.performed;
-    const summary = !f.isAFastDay ? 'Not a fast day' : (f.performed ? 'Completed' : 'In progress');
-    return `
-      <div class="row" data-key="fast" data-done="${done}" data-expanded="${expanded}">
-        <button class="row-trigger" data-toggle-expand="fast">
-          <span class="row-dot"></span>
-          <span class="row-label">
-            <span class="row-he" dir="rtl">תַּעֲנִית</span>
-            <span class="row-en">Ta'anit · Fast Day</span>
-          </span>
-          <span class="row-summary ${!f.isAFastDay ? 'empty' : ''}">${summary}</span>
-          <span class="row-chevron">${_chevron()}</span>
-        </button>
-        <div class="row-detail">
-          <div style="display:flex;flex-direction:column;gap:14px">
-            <div style="display:flex;align-items:center;gap:12px">
-              <button class="pill-toggle ${f.isAFastDay ? 'on' : ''}" data-toggle-fastday>${f.isAFastDay ? 'Yes, fast day' : 'Mark as fast day'}</button>
-              <span style="font-size:.85rem;color:var(--text-3)">Today is a fast day</span>
-            </div>
-            ${f.isAFastDay ? `
-            <div style="display:flex;align-items:center;gap:12px">
-              <button class="pill-toggle ${f.performed ? 'on' : ''}" data-toggle-performed>${f.performed ? 'Completed' : 'Mark complete'}</button>
-              <span style="font-size:.85rem;color:var(--text-3)">I completed the fast</span>
-            </div>` : ''}
-          </div>
-        </div>
-      </div>`;
-  },
   _bindFastDetail() {
     document.querySelector('[data-toggle-fastday]')?.addEventListener('click', e => {
       e.stopPropagation();
@@ -389,63 +548,17 @@ const Tracker = {
       if (!this.data.fast.isAFastDay) this.data.fast.performed = false;
       this._save();
       this._expanded.add('fast');
-      this._renderPractices();
+      this._renderBoard();
     });
     document.querySelector('[data-toggle-performed]')?.addEventListener('click', e => {
       e.stopPropagation();
       this.data.fast.performed = !this.data.fast.performed;
       this._save();
       this._expanded.add('fast');
-      this._renderPractices();
+      this._renderBoard();
     });
   },
 
-  /* Midot */
-  _midotRow() {
-    const midot = this.data.midot || [];
-    const traits = Storage.getKnownTraits();
-    const performed = midot.filter(m => m.performed).length;
-    const done = performed > 0;
-    const expanded = this._expanded.has('midot');
-    const summary = done ? `${performed} active` : (midot.length ? `${midot.length} traits` : '—');
-
-    const items = midot.map((m, i) => `
-      <div class="midot-card" data-midah="${i}">
-        <div class="midot-card-head">
-          <input type="text" class="midot-trait-input"
-            list="known-traits"
-            placeholder="Trait name (e.g., Humility, Patience, Gratitude…)"
-            data-midah-field="${i}.trait" value="${m.trait || ''}">
-          <button class="midot-toggle ${m.performed ? 'on' : ''}" data-midah-toggle="${i}">${m.performed ? '✓ Worked on' : 'Mark'}</button>
-          <button class="remove-x" data-remove-midah="${i}" aria-label="Remove">✕</button>
-        </div>
-        ${m.performed ? `
-        <div>
-          <label class="field-label">Work intensity (1–5)</label>
-          ${this._intensityDots(`midah-${i}.intensity`, m.intensity, i)}
-        </div>` : ''}
-      </div>`).join('');
-
-    return `
-      <div class="row" data-key="midot" data-done="${done}" data-expanded="${expanded}">
-        <button class="row-trigger" data-toggle-expand="midot">
-          <span class="row-dot"></span>
-          <span class="row-label">
-            <span class="row-he" dir="rtl">מִדּוֹת</span>
-            <span class="row-en">Midot · Character Traits</span>
-          </span>
-          <span class="row-summary ${!midot.length ? 'empty' : ''}">${summary}</span>
-          <span class="row-chevron">${_chevron()}</span>
-        </button>
-        <div class="row-detail">
-          <datalist id="known-traits">
-            ${traits.map(t => `<option value="${t}">`).join('')}
-          </datalist>
-          <div class="midot-list">${items}</div>
-          <button class="add-btn" id="addMidah">＋ Add character trait</button>
-        </div>
-      </div>`;
-  },
   _bindMidotDetail() {
     document.querySelectorAll('input[data-midah-field]').forEach(el => {
       el.addEventListener('input', () => {
@@ -467,7 +580,7 @@ const Tracker = {
         }
         this._save();
         this._expanded.add('midot');
-        this._renderPractices();
+        this._renderBoard();
       });
     });
     document.querySelectorAll('[data-remove-midah]').forEach(el => {
@@ -477,45 +590,66 @@ const Tracker = {
         this.data.midot.splice(i, 1);
         this._save();
         this._expanded.add('midot');
-        this._renderPractices();
+        this._renderBoard();
       });
     });
     document.getElementById('addMidah')?.addEventListener('click', e => {
       e.stopPropagation();
+      if (!this.data.midot) this.data.midot = [];
       this.data.midot.push({ trait: '', performed: false, intensity: 0 });
       this._save();
       this._expanded.add('midot');
-      this._renderPractices();
+      this._renderBoard();
     });
-    // Intensity dots for each midah
-    this.data.midot.forEach((m, i) => {
-      const dots = document.querySelectorAll(`[data-intensity-key="midah-${i}.intensity"] .intensity-dot`);
-      dots.forEach((dot, di) => {
+    /* Midot intensity dots */
+    (this.data.midot || []).forEach((m, i) => {
+      const container = document.querySelector(`[data-intensity-key="midah-${i}.intensity"]`);
+      if (!container) return;
+      container.querySelectorAll('.intensity-dot').forEach((dot, di) => {
         dot.addEventListener('click', e => {
           e.stopPropagation();
-          const val = (di + 1) * 2; // 1-5 dots map to 2,4,6,8,10
+          const val = (di + 1) * 2;
           this.data.midot[i].intensity = val;
           this._save();
-          this._renderMidotIntensity(i);
+          container.querySelectorAll('.intensity-dot').forEach((d, j) => {
+            d.classList.toggle('filled', j <= di);
+          });
+          container.querySelector('.intensity-value').textContent = `${di + 1}/5`;
         });
       });
     });
   },
-  _renderMidotIntensity(i) {
-    const container = document.querySelector(`[data-intensity-key="midah-${i}.intensity"]`);
-    if (!container) return;
-    const val = this.data.midot[i].intensity || 0;
-    const filled = Math.ceil(val / 2);
-    container.querySelectorAll('.intensity-dot').forEach((dot, di) => {
-      dot.classList.toggle('filled', di < filled);
-    });
-    const valEl = container.querySelector('.intensity-value');
-    if (valEl) valEl.textContent = filled > 0 ? `${filled}/5` : '—';
+
+  /* ── Shared helpers ── */
+
+  _refreshCardSummary(key) {
+    const card = document.querySelector(`.kanban-card[data-key="${key}"]`);
+    if (!card) return;
+    const isDone = this._isDone(key);
+    const summary = this._buildSummary(key);
+    const oldSummary = card.querySelector('.kanban-summary');
+    const oldHint    = card.querySelector('.kanban-summary-hint');
+    if (oldSummary) oldSummary.remove();
+    if (oldHint)    oldHint.remove();
+
+    let newEl;
+    if (isDone && summary) {
+      newEl = document.createElement('div');
+      newEl.className = 'kanban-summary';
+      newEl.innerHTML = summary;
+    } else if (!isDone) {
+      newEl = document.createElement('div');
+      newEl.className = 'kanban-summary-hint';
+      newEl.textContent = 'tap to mark complete';
+    }
+    if (newEl) {
+      const body = card.querySelector('.kanban-card-body');
+      const detail = body.querySelector('.kanban-detail');
+      if (detail) body.insertBefore(newEl, detail);
+      else body.appendChild(newEl);
+    }
   },
 
-  /* ════════════════ SHARED ════════════════ */
-
-  /* 5-dot intensity component */
   _intensityDots(fieldPath, value, midahIdx) {
     const filled = Math.ceil((value || 0) / 2);
     const dotKey = midahIdx !== undefined ? `midah-${midahIdx}.intensity` : fieldPath;
@@ -528,8 +662,8 @@ const Tracker = {
       </div>`;
   },
 
-  _bindIntensity(row, fieldPath) {
-    const container = row.querySelector(`[data-intensity-key="${fieldPath}"]`);
+  _bindIntensity(card, fieldPath) {
+    const container = card.querySelector(`[data-intensity-key="${fieldPath}"]`);
     if (!container) return;
     container.querySelectorAll('.intensity-dot').forEach(dot => {
       dot.addEventListener('click', e => {
@@ -538,95 +672,13 @@ const Tracker = {
         const val = n * 2;
         this._setNested(this.data, fieldPath, val);
         this._save();
-        // re-render dots
         container.querySelectorAll('.intensity-dot').forEach((d, i) => {
           d.classList.toggle('filled', i < n);
         });
         container.querySelector('.intensity-value').textContent = `${n}/5`;
+        this._refreshCardSummary(fieldPath.split('.')[0]);
       });
     });
-  },
-
-  /* Row trigger bindings (toggle expand + toggle done) */
-  _bindRowTriggers(containerId) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-
-    /* Tap the row → toggle expand (unless simple row → toggles done) */
-    container.querySelectorAll('.row-trigger').forEach(btn => {
-      btn.addEventListener('click', e => {
-        // Dot has its own handler with stopPropagation; ignore here
-        if (e.target.closest('.row-dot[data-toggle-done]')) return;
-
-        if (btn.dataset.simpleToggle) {
-          const key = btn.dataset.simpleToggle;
-          this.data[key] = !this.data[key];
-          this._save();
-          this._refreshSimpleRow(key);
-          return;
-        }
-
-        const key = btn.dataset.toggleExpand;
-        if (!key) return;
-        if (this._expanded.has(key)) this._expanded.delete(key);
-        else this._expanded.add(key);
-        const row = btn.closest('.row');
-        row.setAttribute('data-expanded', this._expanded.has(key));
-      });
-    });
-
-    /* Dot click → toggle done (separately from expand) */
-    container.querySelectorAll('.row-dot[data-toggle-done]').forEach(dot => {
-      dot.addEventListener('click', e => {
-        e.stopPropagation();
-        const key = dot.dataset.toggleDone;
-        if (!key) return;
-        // Determine which structure
-        if (this.data[key] === true || this.data[key] === false) {
-          // simple boolean
-          this.data[key] = !this.data[key];
-          this._save();
-          this._refreshSimpleRow(key);
-        } else if (this.data[key] && 'done' in this.data[key]) {
-          this.data[key].done = !this.data[key].done;
-          // If prayer was just marked done and no time set, fill now
-          if (this.data[key].done && this.data[key].time !== undefined && !this.data[key].time) {
-            const now = new Date();
-            this.data[key].time = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-            const timeInput = document.querySelector(`input[data-field="${key}.time"]`);
-            if (timeInput) timeInput.value = this.data[key].time;
-          }
-          this._save();
-          this._refreshDoneState(key);
-          this._refreshRowSummary(key);
-        }
-      });
-    });
-  },
-
-  _refreshSimpleRow(key) {
-    const row = document.querySelector(`.row[data-key="${key}"]`);
-    if (!row) return;
-    const done = this.data[key];
-    row.setAttribute('data-done', done);
-    const sum = row.querySelector('.row-summary');
-    sum.textContent = done ? '✓' : '—';
-    sum.classList.toggle('empty', !done);
-  },
-
-  _refreshSimpleSummary(key, summary) {
-    const row = document.querySelector(`.row[data-key="${key}"]`);
-    if (!row) return;
-    const sum = row.querySelector('.row-summary');
-    sum.textContent = summary;
-  },
-
-  _refreshDoneState(key) {
-    const row = document.querySelector(`.row[data-key="${key}"]`);
-    if (!row) return;
-    const obj = this.data[key];
-    const done = (obj === true) || (obj && obj.done);
-    row.setAttribute('data-done', done);
   },
 
   _setNested(obj, path, value) {
@@ -639,7 +691,3 @@ const Tracker = {
     cur[parts[parts.length - 1]] = value;
   }
 };
-
-function _chevron() {
-  return '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>';
-}

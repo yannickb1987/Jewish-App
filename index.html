@@ -98,25 +98,40 @@
         <p class="hero-intention" id="heroIntention">May your service be accepted today.</p>
       </article>
 
-      <section class="section">
-        <header class="section-head">
-          <h2 class="section-title">Prayers</h2>
-          <span class="section-count" id="prayerCount">0 / 3</span>
-        </header>
-        <div class="rows" id="prayerRows"></div>
-      </section>
+      <!-- Mobile segmented control (To Do · Done) -->
+      <div class="kanban-segmented" id="kanbanSegmented" role="tablist" aria-label="Board column">
+        <span class="kanban-segmented-pill" id="kanbanSegmentedPill"></span>
+        <button class="kanban-seg-btn active" data-view="todo" role="tab" aria-selected="true">
+          <span class="seg-label">To Do</span>
+          <span class="seg-count" id="segCountTodo">0</span>
+        </button>
+        <button class="kanban-seg-btn" data-view="done" role="tab" aria-selected="false">
+          <span class="seg-label">Done</span>
+          <span class="seg-count" id="segCountDone">0</span>
+        </button>
+      </div>
 
-      <section class="section">
-        <header class="section-head">
-          <h2 class="section-title">Daily Practices</h2>
-          <span class="section-count" id="practiceCount">0 / 7</span>
-        </header>
-        <div class="rows" id="practiceRows"></div>
-      </section>
+      <!-- Kanban board -->
+      <div class="kanban-board" id="kanbanBoard" data-view="todo">
+        <div class="kanban-col" data-col="todo">
+          <header class="kanban-col-head">
+            <h3 class="kanban-col-title">To Do</h3>
+            <span class="kanban-col-count" id="todoCount">0</span>
+          </header>
+          <div class="kanban-cards" id="todoCards"></div>
+        </div>
+        <div class="kanban-col" data-col="done">
+          <header class="kanban-col-head">
+            <h3 class="kanban-col-title">Done</h3>
+            <span class="kanban-col-count" id="doneCount">0</span>
+          </header>
+          <div class="kanban-cards" id="doneCards"></div>
+        </div>
+      </div>
 
       <details class="other-practices" id="otherPractices">
         <summary>Other practices</summary>
-        <div class="rows" id="otherRows"></div>
+        <div class="kanban-cards" id="otherCards"></div>
       </details>
 
     </section>

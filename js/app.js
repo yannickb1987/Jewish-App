@@ -17,6 +17,7 @@ const App = {
     this._bindProfileChip();
     this._bindAuthRows();
     this._bindInstallPrompt();
+    this._bindKanbanSegmented();
     Reader.init();
 
     /* Auth — sets up Firestore sync triggers */
@@ -358,6 +359,41 @@ const App = {
     this._refreshProfileViews();
     this._updateGreeting();
     if (this.activeTab === 'today') Tracker.render(this.currentDate);
+  },
+
+  /* ── Kanban mobile segmented control ── */
+  _bindKanbanSegmented() {
+    const seg   = document.getElementById('kanbanSegmented');
+    const board = document.getElementById('kanbanBoard');
+    if (!seg || !board) return;
+    seg.querySelectorAll('.kanban-seg-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const view = btn.dataset.view;
+        seg.setAttribute('data-view', view);
+        board.setAttribute('data-view', view);
+        seg.querySelectorAll('.kanban-seg-btn').forEach(b => {
+          b.classList.toggle('active', b === btn);
+          b.setAttribute('aria-selected', b === btn ? 'true' : 'false');
+        });
+      });
+    });
+
+    /* Swipe to switch between To Do / Done on mobile */
+    let touchStartX = null;
+    board.addEventListener('touchstart', e => {
+      touchStartX = e.touches[0].clientX;
+    }, { passive: true });
+    board.addEventListener('touchend', e => {
+      if (touchStartX === null) return;
+      const dx = e.changedTouches[0].clientX - touchStartX;
+      touchStartX = null;
+      if (Math.abs(dx) < 60) return;
+      const current = board.getAttribute('data-view');
+      const next = dx < 0 ? 'done' : 'todo';
+      if (next !== current && window.innerWidth <= 699) {
+        seg.querySelector(`[data-view="${next}"]`)?.click();
+      }
+    }, { passive: true });
   },
 
   /* ── PWA install prompt (Android / Edge) ── */
