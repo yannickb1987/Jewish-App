@@ -16,6 +16,7 @@ const App = {
     this._bindReaderTriggers();
     this._bindProfileChip();
     this._bindAuthRows();
+    this._bindLocationRows();
     this._bindInstallPrompt();
     this._bindKanbanSegmented();
     Reader.init();
@@ -109,8 +110,9 @@ const App = {
 
     document.getElementById('hebrewDateDisplay').textContent = '…';
     document.getElementById('parashaDisplay').textContent = '';
+    this._renderShabbatBanner(null);
 
-    const { hebrewDate, parasha } = await HebrewCal.init(this.currentDate);
+    const { hebrewDate, parasha, shabbat } = await HebrewCal.init(this.currentDate);
     const heEl = document.getElementById('hebrewDateDisplay');
     if (hebrewDate?.hebrew) {
       heEl.textContent = hebrewDate.hebrew;
@@ -126,7 +128,85 @@ const App = {
       pEl.textContent = '';
     }
 
+    this._renderShabbatBanner(shabbat);
     document.getElementById('heroIntention').textContent = this._getIntention();
+  },
+
+  /* ── Shabbat / Yom Tov banner ── */
+  _renderShabbatBanner(shabbat) {
+    const banner = document.getElementById('heroShabbat');
+    if (!banner) return;
+
+    /* Determine if today is "relevant": Friday, Saturday, or any day
+       with candles/havdalah from HebCal (covers Yom Tov eves + holiday days) */
+    const [y, m, d] = this.currentDate.split('-').map(Number);
+    const dow = new Date(y, m - 1, d).getDay(); // 5 = Fri, 6 = Sat
+    const isShabbatish = dow === 5 || dow === 6;
+    const hasEvents = shabbat && (shabbat.candles || shabbat.havdalah);
+    const shouldShow = isShabbatish || hasEvents;
+
+    if (!shouldShow) {
+      banner.innerHTML = '';
+      banner.style.display = 'none';
+      return;
+    }
+
+    const loc = HebrewCal.getLocation();
+
+    /* No location set — show CTA */
+    if (!loc) {
+      banner.innerHTML = `
+        <button class="shabbat-cta" id="shabbatEnableLoc">
+          <span class="shabbat-icon">🕯️</span>
+          <span class="shabbat-cta-text">Enable Shabbat times — share location</span>
+        </button>`;
+      banner.style.display = '';
+      banner.querySelector('#shabbatEnableLoc')?.addEventListener('click', () => this._requestLocationFromUser());
+      return;
+    }
+
+    /* Location set, but API returned no candle/havdalah info for this date */
+    if (!shabbat || (!shabbat.candles && !shabbat.havdalah)) {
+      banner.innerHTML = '';
+      banner.style.display = 'none';
+      return;
+    }
+
+    const parts = [];
+    if (shabbat.candles) {
+      parts.push(`
+        <div class="shabbat-row">
+          <span class="shabbat-icon">🕯️</span>
+          <span class="shabbat-label">Candle lighting</span>
+          <span class="shabbat-time">${shabbat.candles}</span>
+        </div>`);
+    }
+    if (shabbat.havdalah) {
+      parts.push(`
+        <div class="shabbat-row">
+          <span class="shabbat-icon">✨</span>
+          <span class="shabbat-label">Havdalah</span>
+          <span class="shabbat-time">${shabbat.havdalah}</span>
+        </div>`);
+    }
+    const locLine = loc.label
+      ? `<div class="shabbat-loc">${loc.label}${shabbat.holidayName ? ' · ' + shabbat.holidayName : ''}</div>`
+      : (shabbat.holidayName ? `<div class="shabbat-loc">${shabbat.holidayName}</div>` : '');
+    banner.innerHTML = `${parts.join('')}${locLine}`;
+    banner.style.display = '';
+  },
+
+  async _requestLocationFromUser() {
+    try {
+      await HebrewCal.requestLocation();
+      await this._updateHero();
+      this._refreshProfileViews();
+    } catch (e) {
+      const msg = e?.code === 1
+        ? 'Location permission denied. Enable location in your browser settings to use Shabbat times.'
+        : 'Could not get your location. Try again or set it manually in Profile.';
+      alert(msg);
+    }
   },
 
   _updateGreeting() {
@@ -280,6 +360,20 @@ const App = {
     const chip = document.getElementById('profileChip');
     if (chip) chip.addEventListener('click', () => this._showTab('profile'));
   },
+  _bindLocationRows() {
+    const set   = document.getElementById('locationRow');
+    const clear = document.getElementById('locationClear');
+    if (set) set.addEventListener('click', () => this._requestLocationFromUser());
+    if (clear) clear.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (confirm('Remove saved location? Shabbat times will be hidden until you set a new one.')) {
+        HebrewCal.clearLocation();
+        this._refreshProfileViews();
+        if (this.activeTab === 'today') this._updateHero();
+      }
+    });
+  },
+
   _bindAuthRows() {
     const row = document.getElementById('signInRow');
     if (row) row.addEventListener('click', async () => {
@@ -303,6 +397,20 @@ const App = {
     const user    = Auth?.user;
     const profile = Storage.getProfile();
     const name    = (profile.name || (user?.displayName) || '').trim();
+
+    /* Location row */
+    const locLabel = document.getElementById('locationLabel');
+    const locClear = document.getElementById('locationClear');
+    if (locLabel) {
+      const loc = HebrewCal.getLocation();
+      if (loc) {
+        locLabel.textContent = loc.label || `${loc.lat}, ${loc.lon}`;
+        if (locClear) locClear.style.display = '';
+      } else {
+        locLabel.textContent = 'Tap to set — required for Shabbat times';
+        if (locClear) locClear.style.display = 'none';
+      }
+    }
 
     /* Top avatar */
     const topAvatar = document.getElementById('topAvatar');

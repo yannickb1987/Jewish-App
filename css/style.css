@@ -1504,6 +1504,7 @@ body.reader-open { overflow: hidden; }
   background: var(--surface);
   border-bottom: 1px solid var(--border);
   transition: background 150ms;
+  cursor: pointer;
 }
 .profile-row:last-child { border-bottom: none; }
 .profile-row:hover { background: var(--surface-2); }
@@ -2104,3 +2105,105 @@ body.onboard-open { overflow: hidden; }
 .kanban-detail .detail-grid {
   padding: 0;
 }
+
+/* ══════════════════════════════════════════════════════════
+   SHABBAT / YOM TOV BANNER (in hero card)
+══════════════════════════════════════════════════════════ */
+.hero-shabbat {
+  margin: 16px auto 4px;
+  max-width: 380px;
+  background: linear-gradient(135deg, var(--accent-soft), var(--surface));
+  border: 1px solid rgba(184, 146, 77, 0.35);
+  border-radius: var(--r);
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: var(--shadow-xs);
+  animation: shabbatBannerIn 380ms var(--ease);
+}
+@keyframes shabbatBannerIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.shabbat-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9rem;
+}
+.shabbat-icon {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.shabbat-label {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  color: var(--text-2);
+  letter-spacing: 0.01em;
+}
+.shabbat-time {
+  margin-left: auto;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 1.05rem;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+.shabbat-loc {
+  font-size: 0.72rem;
+  color: var(--text-3);
+  text-align: center;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+
+/* Inline CTA when location not set */
+.shabbat-cta {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 16px;
+  background: transparent;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-2);
+  border-radius: var(--r-sm);
+  transition: color 150ms;
+}
+.shabbat-cta:hover { color: var(--text); }
+.shabbat-cta-text { letter-spacing: 0.02em; }
+
+/* Profile row two-line variant + clear button */
+.profile-row-label .profile-row-text {
+  display: block;
+  font-size: 0.95rem;
+  color: var(--text);
+  font-weight: 500;
+  line-height: 1.2;
+}
+.profile-row-label .profile-row-sub {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-3);
+  margin-top: 3px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.profile-row-clear {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  color: var(--text-3);
+  font-size: 0.85rem;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 150ms;
+  flex-shrink: 0;
+}
+.profile-row-clear:hover { background: var(--surface-3); color: var(--accent); }
