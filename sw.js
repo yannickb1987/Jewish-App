@@ -1,83 +1,104 @@
-/* Service worker for Avodat Hashem — caches the app shell for fast
-   reloads and offline first-load. API calls (sefaria, hebcal,
-   gstatic firebase, googleapis) always pass through to the network. */
-const CACHE_VERSION = 'avodat-v3';
+/* Service worker for Avodat Hashem.
+   Strategy:
+   - HTML, CSS, JS, JSON, SVG: network-first → always serve the latest
+     code; fall back to cache only when offline.
+   - Fonts and other immutable assets: cache-first (long-term cache).
+   - External APIs (Sefaria, HebCal, Firebase, Google, BigDataCloud):
+     bypass the SW entirely (browser handles directly).
+   - Navigations: network-first → fall back to cached index.html when
+     offline.
+
+   Bump CACHE_VERSION whenever you change this file so old caches are
+   purged on activate. (The network-first strategy makes individual
+   bumps less critical, but it keeps things tidy.)
+*/
+const CACHE_VERSION = 'avodat-v6';
+
 const SHELL = [
   '/',
   '/index.html',
-  '/css/style.css',
-  '/js/storage.js',
-  '/js/sync.js',
-  '/js/firebase-config.js',
-  '/js/firebase.js',
-  '/js/auth.js',
-  '/js/hebrew-cal.js',
-  '/js/tehilim.js',
-  '/js/sefaria.js',
-  '/js/tracker.js',
-  '/js/charts.js',
-  '/js/reader.js',
-  '/js/onboarding.js',
-  '/js/app.js',
-  '/icons/icon.svg',
-  '/manifest.json'
+  '/manifest.json',
+  '/icons/icon.svg'
 ];
 
 self.addEventListener('install', (e) => {
+  self.skipWaiting();
   e.waitUntil(
     caches.open(CACHE_VERSION).then((c) =>
-      c.addAll(SHELL).catch(() => {}) // tolerate missing files during dev
+      c.addAll(SHELL).catch(() => {})
     )
   );
-  self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {
   e.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_VERSION).map((k) => caches.delete(k)))
-    )
+      Promise.all(
+        keys.filter((k) => k !== CACHE_VERSION).map((k) => caches.delete(k))
+      )
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
 });
 
+/* External hosts to bypass entirely */
+const BYPASS_HOSTS = [
+  'sefaria.org',
+  'hebcal.com',
+  'gstatic.com',
+  'googleapis.com',
+  'firebase',
+  'firebaseio.com',
+  'bigdatacloud.net'
+];
+
 self.addEventListener('fetch', (e) => {
-  const url = new URL(e.request.url);
-  // Always go to network for APIs and Firebase
-  if (
-    url.hostname.includes('sefaria.org')   ||
-    url.hostname.includes('hebcal.com')    ||
-    url.hostname.includes('gstatic.com')   ||
-    url.hostname.includes('googleapis.com')||
-    url.hostname.includes('firebaseio.com')||
-    url.hostname.includes('firebase')
-  ) return; // default network behavior
-
   if (e.request.method !== 'GET') return;
+  const url = new URL(e.request.url);
 
-  // Network-first for HTML (so users always get the latest UI)
-  if (e.request.mode === 'navigate' || e.request.destination === 'document') {
+  /* Bypass external APIs and SDKs */
+  if (BYPASS_HOSTS.some((h) => url.hostname.includes(h))) return;
+
+  /* Same-origin only from here on */
+  if (url.origin !== self.location.origin) return;
+
+  const isFont = /\.(woff2?|ttf|otf|eot)$/i.test(url.pathname);
+
+  /* Cache-first for fonts (immutable, fingerprinted) */
+  if (isFont) {
     e.respondWith(
-      fetch(e.request)
-        .then((res) => {
-          const copy = res.clone();
-          caches.open(CACHE_VERSION).then((c) => c.put(e.request, copy));
+      caches.match(e.request).then((cached) =>
+        cached ||
+        fetch(e.request).then((res) => {
+          if (res && res.status === 200) {
+            const copy = res.clone();
+            caches.open(CACHE_VERSION).then((c) => c.put(e.request, copy));
+          }
           return res;
         })
-        .catch(() => caches.match(e.request).then((r) => r || caches.match('/index.html')))
+      )
     );
     return;
   }
 
-  // Cache-first for static shell (fonts, CSS, JS)
+  /* Network-first for everything same-origin (HTML, CSS, JS, JSON, SVG, icons) */
   e.respondWith(
-    caches.match(e.request).then((cached) =>
-      cached ||
-      fetch(e.request).then((res) => {
-        const copy = res.clone();
-        caches.open(CACHE_VERSION).then((c) => c.put(e.request, copy));
+    fetch(e.request)
+      .then((res) => {
+        if (res && res.status === 200) {
+          const copy = res.clone();
+          caches.open(CACHE_VERSION).then((c) => c.put(e.request, copy));
+        }
         return res;
       })
-    )
+      .catch(() =>
+        caches.match(e.request).then((cached) =>
+          cached || (e.request.mode === 'navigate' ? caches.match('/index.html') : null)
+        )
+      )
   );
+});
+
+/* Message channel — allow the page to ask SW to skipWaiting */
+self.addEventListener('message', (e) => {
+  if (e.data && e.data.type === 'SKIP_WAITING') self.skipWaiting();
 });

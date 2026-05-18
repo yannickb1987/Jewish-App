@@ -436,10 +436,24 @@
   <script src="js/onboarding.js"></script>
   <script src="js/app.js"></script>
   <script>
-    /* Register service worker for PWA offline shell */
+    /* Register service worker for PWA. Strategy:
+       - updateViaCache:'none' so the SW file itself is always re-checked.
+       - On a new SW taking over an existing page, reload once so the
+         user gets the fresh assets immediately. */
     if ('serviceWorker' in navigator) {
+      const hadControllerAtLoad = !!navigator.serviceWorker.controller;
       window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
+        navigator.serviceWorker
+          .register('/sw.js', { updateViaCache: 'none' })
+          .catch(() => {});
+      });
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (hadControllerAtLoad) {
+          /* Avoid reload loops by guarding on session storage */
+          if (sessionStorage.getItem('sw_reloaded') === '1') return;
+          sessionStorage.setItem('sw_reloaded', '1');
+          window.location.reload();
+        }
       });
     }
   </script>
